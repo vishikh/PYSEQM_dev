@@ -113,7 +113,7 @@ def rotate(ni,nj,xij,rij,tore,da,db, qa,qb, rho0a,rho0b, rho1a,rho1b, rho2a,rho2
 
     ###############################33
     # X-H hevay atom - Hydrogen
-    xXH=-xij[XH]
+    xXH=-xij[XH]   # xXH is the unit vector pointing from X to H
     yXH=torch.zeros(xXH.shape[0],2,dtype=dtype, device=device)
     zXH=torch.zeros_like(xXH)
     #cond1 = torch.abs(xXH[...,3-1])>0.99999999
@@ -140,15 +140,20 @@ def rotate(ni,nj,xij,rij,tore,da,db, qa,qb, rho0a,rho0b, rho1a,rho1b, rho2a,rho2
     #modify the code
     #xXH.register_hook(print)
     #zXH2 = torch.sqrt(1.0-xXH[...,3-1]**2)
+    # The unit vector joining X to H is xXH whose components are xXH->(x,y,z)
+    # if a is the angle of xXH with the z-axis and b is the angle of the projection of xXH
+    # in the xy plane with the x-axis, then
+    # cosb = z, sinb = sqrt(1-z^2)
+    # cosa = x/sqrt(1-z^2), sinb = y/sqrt(1-z^2)
     zXH2 = torch.zeros_like(xXH[...,2])
-    cond_xXH2 = torch.abs(xXH[...,3-1])<1.0
-    zXH2[cond_xXH2] = torch.sqrt(1.0-xXH[cond_xXH2,3-1]**2)
-    cond1XH = zXH2>1.0e-5
+    cond_xXH2 = torch.abs(xXH[...,3-1])<1.0 # make sure z^2 < 1 
+    zXH2[cond_xXH2] = torch.sqrt(1.0-xXH[cond_xXH2,3-1]**2)   #zXH2 is sinb
+    cond1XH = zXH2>1.0e-5 # make sure sqrt(1-z^2) is big enough
     aXH = 1.0/zXH2[cond1XH]
     zXH0 =  torch.ones_like(zXH2)
-    zXH0[cond1XH] = -aXH*xXH[cond1XH,1-1]*xXH[cond1XH,3-1]
+    zXH0[cond1XH] = -aXH*xXH[cond1XH,1-1]*xXH[cond1XH,3-1] #zXH0 is -z*x/sqrt(1-z^2) = -cosb*cosa
     zXH1 = torch.zeros_like(zXH2)
-    zXH1[cond1XH] = -aXH*xXH[cond1XH,2-1]*xXH[cond1XH,3-1]
+    zXH1[cond1XH] = -aXH*xXH[cond1XH,2-1]*xXH[cond1XH,3-1] #zHX1 is -z*y/sqrt(1-z^2) = -cosb*sina
     zXH = torch.stack((zXH0, zXH1, zXH2), dim=1)
 
 
@@ -156,13 +161,15 @@ def rotate(ni,nj,xij,rij,tore,da,db, qa,qb, rho0a,rho0b, rho1a,rho1b, rho2a,rho2
     yXH[cond1XH,0] =  aXH*xXH[cond1XH,2-1] * \
                       torch.where( xXH[cond1XH,1-1]>=0.0, \
                                    torch.tensor(-1.0,dtype=dtype, device=device), \
-                                   torch.tensor(1.0,dtype=dtype, device=device) )
+                                   torch.tensor(1.0,dtype=dtype, device=device) ) 
+    #yXH[...,0] is -y/sqrt(1-z^2) = -sina
     #yXH[cond1XH,1-1] = -aXH*xXH[cond1XH,2-1]
     #yXH[xXH[...,1-1]<0.0,1-1] *= -1.0
     #yXH[xXH[...,1-1]<0.0,1-1].mul_(-1.0)
 
     yXH[...,2-1]=1.0
     yXH[cond1XH,2-1] = torch.abs(aXH * xXH[cond1XH,1-1])
+    #yXH[...,1] is |x/sqrt(1=z^2)| = |cosa|
     #y[3] is not used
 
     xx11XH = xXH[...,1-1]**2
@@ -178,6 +185,7 @@ def rotate(ni,nj,xij,rij,tore,da,db, qa,qb, rho0a,rho0b, rho1a,rho1b, rho2a,rho2
     yyzz21XH = yXH[...,2-1]*yXH[...,1-1] + zXH[...,2-1]*zXH[...,1-1]
     yyzz22XH = yXH[...,2-1]**2 + zXH[...,2-1]**2
 
+    # print('xXH:',xXH)
     wXH = torch.zeros(riXH.shape[0],10,dtype=dtype, device=device)
     # (s s/s s)
     wXH[...,1-1] = riXH[...,1-1]

@@ -10,7 +10,7 @@ def fock(nmol, molsize, P0, M, maskd, mask, idxi, idxj, w, gss, gpp, gsp, gp2, h
     dtype = M.dtype
     device = M.device
     # P0 : total density matrix, P0 = Palpha + Pbeta, Palpha==Pbeta,
-    #     shape (nmol, 4*molsize, 4*molsize)
+    #     shape (nmol, 4*molsize, 4*molsize)  --> each atom sp basis functions on it (4: 1s + 3p)
     #     for closed shell molecule only, RHF is used, alpha and beta has same WF
     # M : Hcore in the shape of (nmol*molsize**2,4,4)
     # to construct Hcore from M, check hcore.py
@@ -32,7 +32,7 @@ def fock(nmol, molsize, P0, M, maskd, mask, idxi, idxj, w, gss, gpp, gsp, gp2, h
 
     # for the diagonal block, the summation over ortitals on the same atom in Fock matrix
     F = M.clone()  # Hcore part
-    Pptot = P[...,1,1]+P[...,2,2]+P[...,3,3]
+    Pptot = P[...,1,1]+P[...,2,2]+P[...,3,3]  #px,py and pz AOs are summed
     #  F_mu_mu = Hcore + \sum_nu^A P_nu_nu (g_mu_nu - 0.5 h_mu_nu) + \sum^B
     """
     #(s,s)
