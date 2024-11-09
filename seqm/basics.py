@@ -4,6 +4,7 @@ from .seqm_functions.energy import *
 from .seqm_functions.parameters import params
 from torch.autograd import grad
 from .seqm_functions.constants import ev
+from .seqm_functions.anal_grad import scf_grad
 import os
 import time
 
@@ -375,6 +376,12 @@ class Energy(torch.nn.Module):
         else:
             self.uhf = False
 
+        # vishikh hack: hook in the gradient code here
+        self.analytical_grad = False
+        if 'analytical_grad' in seqm_parameters:
+            self.analytical_grad = True
+
+
     def forward(self, molecule, learned_parameters=dict(), all_terms=False, P0=None, *args, **kwargs):
         """
         get the energy terms
@@ -450,6 +457,44 @@ class Energy(torch.nn.Module):
 
         EnucAB = pair_nuclear_energy(molecule.const, nmol, ni, nj, idxi, idxj, rij, gam=gam, method=self.method, parameters=parnuc)
         Eelec = elec_energy(P, F, Hcore)
+        
+        if self.analytical_grad:
+            # beta = torch.cat((parameters['beta_s'].unsqueeze(1), parameters['beta_p'].unsqueeze(1)),dim=1)
+            # if "Kbeta" in parameters:
+            #     Kbeta = parameters["Kbeta"]
+            # else:
+            #     Kbeta = None
+            scf_grad( P=P, 
+                      const=molecule.const,
+                      molsize=molsize,
+                      # nHeavy=nHeavy,
+                      # nHydro=nHydro,
+                      # nOccMO=nocc,
+                      # maskd=maskd,
+                      # mask=mask,
+                      # atom_molid=atom_molid,
+                      # pair_molid=pair_molid,
+                      idxi=idxi,
+                      idxj=idxj,
+                      ni=ni,
+                      nj=nj,
+                      xij=xij,
+                      rij=rij,
+                      Z=Z,
+                      zetas=parameters['zeta_s'],
+                      zetap=parameters['zeta_p'],
+                      # uss=parameters['U_ss'],
+                      # upp=parameters['U_pp'],
+                      # gss=parameters['g_ss'],
+                      # gsp=parameters['g_sp'],
+                      # gpp=parameters['g_pp'],
+                      # gp2=parameters['g_p2'],
+                      # hsp=parameters['h_sp'],
+                      # beta=beta,
+                      # Kbeta=Kbeta,
+                      # sp2=self.sp2,
+                     )
+
         if all_terms:
             Etot, Enuc = total_energy(nmol, pair_molid,EnucAB, Eelec)
             Eiso = elec_energy_isolated_atom(molecule.const, Z,
