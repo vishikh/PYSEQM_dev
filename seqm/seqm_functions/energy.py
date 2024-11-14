@@ -101,7 +101,7 @@ def pair_nuclear_energy(const, nmol, ni, nj, idxi, idxj, rij, gam, method='AM1',
     tore = const.tore
     alpha = parameters[0]
     t1 = tore[ni]*tore[nj]*gam
-    #special case for C-H and O-H
+    #special case for N-H and O-H
     XH = ((ni==7) | (ni==8)) & (nj==1)
     t2 = torch.zeros_like(t1)
     tmp = torch.exp(-alpha[idxi]*rija)

@@ -137,8 +137,6 @@ def hcore(const,nmol,molsize, maskd, mask, idxi,idxj, ni,nj,xij,rij,
     #off diagonal block for Hcore
     #M[mask,:,:] = smat
     #check the comment out part in diat.py h1elec
-    print(f'idxi = {idxi}, idxj = {idxj}') #,\nbeta[idxi,:] =\n{beta[idxi,:]}, beta[idxj,:] =\n{beta[idxj,:]}')
-    print(f'beta[idxi,0]:\n{beta[idxi,0]}\nbeta[idxi,0:1]:\n{beta[idxi,0:1]}\nbeta[idxi,1:2]:\n{beta[idxi,1:2]}\nbeta[idxi,1:2,None]:\n{beta[idxi,1:2,None]}')
     # beta is a nx2 matrix with n (atomic number) rows and 2 columns. 1st column is beta_s, 2nd column is beta_p
     if torch.is_tensor(Kbeta):
         M[mask,0,0]   = di[...,0,0]*(beta[idxi,0]+beta[idxj,0])/2.0 * Kbeta[:,0]

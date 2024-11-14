@@ -119,6 +119,7 @@ class Parser(torch.nn.Module):
         ni = Z[idxi]
         nj = Z[idxj]
         xij = paircoord/pairdist.unsqueeze(1)
+        Xij = paircoord
         mask = real_atoms[idxi]*molsize+real_atoms[idxj]%molsize
         mask_l = real_atoms[idxj]*molsize+real_atoms[idxi]%molsize
         pair_molid = atom_molid[idxi] # doesn't matter atom_molid[idxj]
@@ -130,12 +131,12 @@ class Parser(torch.nn.Module):
             return nmol, molsize, \
                 nHeavy, nHydro, nocc, \
                 Z, maskd, atom_molid, \
-                mask, pair_molid, ni, nj, idxi, idxj, xij, rij
+                mask, pair_molid, ni, nj, idxi, idxj, xij, rij, Xij
         else:
             return nmol, molsize, \
                 nHeavy, nHydro, nocc, \
                 Z, maskd, atom_molid, \
-                mask, mask_l, pair_molid, ni, nj, idxi, idxj, xij, rij
+                mask, mask_l, pair_molid, ni, nj, idxi, idxj, xij, rij, Xij
 
 class Parser_For_Ovr(torch.nn.Module):
     """
@@ -389,7 +390,7 @@ class Energy(torch.nn.Module):
         nmol, molsize, \
         nHeavy, nHydro, nocc, \
         Z, maskd, atom_molid, \
-        mask, pair_molid, ni, nj, idxi, idxj, xij, rij = self.parser(molecule, *args, **kwargs)
+        mask, pair_molid, ni, nj, idxi, idxj, xij, rij, Xij = self.parser(molecule, *args, **kwargs)
                 
         if callable(learned_parameters):
             adict = learned_parameters(molecule.species, molecule.coordinates)
@@ -459,7 +460,7 @@ class Energy(torch.nn.Module):
         Eelec = elec_energy(P, F, Hcore)
         
         if self.analytical_grad:
-            # beta = torch.cat((parameters['beta_s'].unsqueeze(1), parameters['beta_p'].unsqueeze(1)),dim=1)
+            beta = torch.cat((parameters['beta_s'].unsqueeze(1), parameters['beta_p'].unsqueeze(1)),dim=1)
             # if "Kbeta" in parameters:
             #     Kbeta = parameters["Kbeta"]
             # else:
@@ -470,8 +471,8 @@ class Energy(torch.nn.Module):
                       # nHeavy=nHeavy,
                       # nHydro=nHydro,
                       # nOccMO=nocc,
-                      # maskd=maskd,
-                      # mask=mask,
+                      maskd=maskd,
+                      mask=mask,
                       # atom_molid=atom_molid,
                       # pair_molid=pair_molid,
                       idxi=idxi,
@@ -479,18 +480,21 @@ class Energy(torch.nn.Module):
                       ni=ni,
                       nj=nj,
                       xij=xij,
+                      Xij = Xij,
                       rij=rij,
                       Z=Z,
+                      gam=gam,
+                      parnuc = parnuc,
                       zetas=parameters['zeta_s'],
                       zetap=parameters['zeta_p'],
                       # uss=parameters['U_ss'],
                       # upp=parameters['U_pp'],
-                      # gss=parameters['g_ss'],
+                      gss=parameters['g_ss'],
                       # gsp=parameters['g_sp'],
                       # gpp=parameters['g_pp'],
                       # gp2=parameters['g_p2'],
                       # hsp=parameters['h_sp'],
-                      # beta=beta,
+                      beta=beta,
                       # Kbeta=Kbeta,
                       # sp2=self.sp2,
                      )
