@@ -159,7 +159,7 @@ sto6g_coeff = torch.zeros((3, 2, 6), dtype=torch.float64)
 sto6g_exponent = torch.zeros((3, 2, 6), dtype=torch.float64)
 
 # 1s
-sto6g_coeff[0, 0, :] = torch.tensor(
+sto6g_exponent[0, 0, :] = torch.tensor(
     [
         2.310303149e01,
         4.235915534e00,
@@ -169,7 +169,7 @@ sto6g_coeff[0, 0, :] = torch.tensor(
         6.510953954e-02,
     ]
 )
-sto6g_exponent[0, 0, :] = torch.tensor(
+sto6g_coeff[0, 0, :] = torch.tensor(
     [
         9.163596280e-03,
         4.936149294e-02,
@@ -181,7 +181,7 @@ sto6g_exponent[0, 0, :] = torch.tensor(
 )
 
 # 2s
-sto6g_coeff[1, 0, :] = torch.tensor(
+sto6g_exponent[1, 0, :] = torch.tensor(
     [
         2.768496241e01,
         5.077140627e00,
@@ -191,7 +191,7 @@ sto6g_coeff[1, 0, :] = torch.tensor(
         4.416183978e-02,
     ]
 )
-sto6g_exponent[1, 0, :] = torch.tensor(
+sto6g_coeff[1, 0, :] = torch.tensor(
     [
         -4.151277819e-03,
         -2.067024148e-02,
@@ -203,7 +203,7 @@ sto6g_exponent[1, 0, :] = torch.tensor(
 )
 
 # 2p
-sto6g_coeff[1, 1, :] = torch.tensor(
+sto6g_exponent[1, 1, :] = torch.tensor(
     [
         5.868285913e00,
         1.530329631e00,
@@ -213,7 +213,7 @@ sto6g_coeff[1, 1, :] = torch.tensor(
         4.948220127e-02,
     ]
 )
-sto6g_exponent[1, 1, :] = torch.tensor(
+sto6g_coeff[1, 1, :] = torch.tensor(
     [
         7.924233646e-03,
         5.144104825e-02,
@@ -225,7 +225,7 @@ sto6g_exponent[1, 1, :] = torch.tensor(
 )
 
 # 3s
-sto6g_coeff[2, 0, :] = torch.tensor(
+sto6g_exponent[2, 0, :] = torch.tensor(
     [
         3.273031938e00,
         9.200611311e-01,
@@ -235,7 +235,7 @@ sto6g_coeff[2, 0, :] = torch.tensor(
         2.724741144e-02,
     ]
 )
-sto6g_exponent[2, 0, :] = torch.tensor(
+sto6g_coeff[2, 0, :] = torch.tensor(
     [
         -6.775596947e-03,
         -5.639325779e-02,
@@ -247,7 +247,7 @@ sto6g_exponent[2, 0, :] = torch.tensor(
 )
 
 # 3p
-sto6g_coeff[2, 1, :] = torch.tensor(
+sto6g_exponent[2, 1, :] = torch.tensor(
     [
         5.077973607e00,
         1.340786940e00,
@@ -257,7 +257,7 @@ sto6g_coeff[2, 1, :] = torch.tensor(
         3.315424265e-02,
     ]
 )
-sto6g_exponent[2, 1, :] = torch.tensor(
+sto6g_coeff[2, 1, :] = torch.tensor(
     [
         -3.329929840e-03,
         -1.419488340e-02,

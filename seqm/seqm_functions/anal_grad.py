@@ -11,8 +11,10 @@ def scf_grad(P, const, mask, maskd, molsize, idxi,idxj, ni,nj,xij, Xij,rij, gam,
     Calculate the gradient of the ground state SCF energy
     in the units of ev/Angstrom
     """
-    print("Reached gradient")
+    torch.set_printoptions(precision=6)
+    # print("Reached gradient")
     # print(f'Vishikh: shape of P is {P.shape}')
+    # print(f'Vishikh: P is {P}')
 
     dtype = Xij.dtype
     device = Xij.device
@@ -20,11 +22,12 @@ def scf_grad(P, const, mask, maskd, molsize, idxi,idxj, ni,nj,xij, Xij,rij, gam,
     npairs=Xij.shape[0]
     qn_int = const.qn_int
     a0_sq = a0*a0
-    print(f'There are {nmol} molecules with {molsize} atoms in each molecule')
+    # print(f'There are {nmol} molecules with {molsize} atoms in each molecule')
     # print(f'The convered density is \n{P} whose shape is {P.shape}')
 
     # Define the gradient tensor
     grad = torch.zeros(nmol*molsize, 3, dtype=dtype, device=device)
+    # grad_nuc = torch.zeros(nmol*molsize, 3, dtype=dtype, device=device)
 
     # Overlap grad
     # TODO: Add a cutoff distance for overlap
@@ -48,6 +51,8 @@ def scf_grad(P, const, mask, maskd, molsize, idxi,idxj, ni,nj,xij, Xij,rij, gam,
 
             # <sA|sB>ij
             sij = ((2*torch.div(torch.sqrt(alpha_i[:, None]*alpha_j),alpha_i[:,None]+alpha_j))**(3/2))*torch.exp(-alphas_1*(rij[i]**2))
+            # print(f'Vishikh: {torch.sum(C_times_C*sij)}')
+            # ss Overlap matrix is correct
 
             # d/dx of <sA|sB>
             if l==0: 
@@ -57,12 +62,20 @@ def scf_grad(P, const, mask, maskd, molsize, idxi,idxj, ni,nj,xij, Xij,rij, gam,
                 overlap_ab_x[i,0,0,0] = torch.sum(C_times_C*ans)*Xij[i,0]/a0_sq 
                 overlap_ab_x[i,1,0,0] = torch.sum(C_times_C*ans)*Xij[i,1]/a0_sq 
                 overlap_ab_x[i,2,0,0] = torch.sum(C_times_C*ans)*Xij[i,2]/a0_sq 
+                
+                # print(overlap_ab_x)
+                # ss Overlap matrix derivative is correct
 
-    overlap_ab_x[:,0,0,0] *= (beta[idxi,0]+beta[idxj,0])/2.0
-    overlap_ab_x[:,1,0,0] *= (beta[idxi,0]+beta[idxj,0])/2.0
-    overlap_ab_x[:,2,0,0] *= (beta[idxi,0]+beta[idxj,0])/2.0
+    # There is no dividing beta_mu+betanu by 2. Found this out during debugging
+    # Possibly because we're only going over unique pairs but in the total energy
+    # expression, the overlap term appears on the upper and lower triangle of Hcore 
+    # and hence needs to be multiplied by 2.
+    overlap_ab_x[:,0,0,0] *= (beta[idxi,0]+beta[idxj,0])#/2.0
+    overlap_ab_x[:,1,0,0] *= (beta[idxi,0]+beta[idxj,0])#/2.0
+    overlap_ab_x[:,2,0,0] *= (beta[idxi,0]+beta[idxj,0])#/2.0
+    # print(overlap_ab_x)
+    # Correct-ish so far (gaussian approximation of sto might be giving some difference)
 
-    torch.set_printoptions(precision=6)
     # Core-core repulsion derivatives
 
     # First, derivative of g_AB
@@ -90,6 +103,15 @@ def scf_grad(P, const, mask, maskd, molsize, idxi,idxj, ni,nj,xij, Xij,rij, gam,
     core_ab_x[:,0] = coreTerm*Xij[:,0] 
     core_ab_x[:,1] = coreTerm*Xij[:,1]
     core_ab_x[:,2] = coreTerm*Xij[:,2]
+    # print(f'gam is\n{gam}\ng is\n{g}')
+
+    # mycoreTerm = (1.0/rija)*(prefactor*tmp+t3)
+    # mycore_ab_x = torch.zeros((npairs,3),dtype=dtype, device=device)
+    # mycore_ab_x[:,0] = mycoreTerm*Xij[:,0] 
+    # mycore_ab_x[:,1] = mycoreTerm*Xij[:,1]
+    # mycore_ab_x[:,2] = mycoreTerm*Xij[:,2]
+    # print(mycore_ab_x)
+    # # mycoreTerm is correct
 
     # Next, derivative of (sasa|sbsb), which can be done while doing derivatives of other two-center repulsion integral
 
@@ -114,11 +136,12 @@ def scf_grad(P, const, mask, maskd, molsize, idxi,idxj, ni,nj,xij, Xij,rij, gam,
     # again assuming xij = xj-xi, and hence forgoing the minus sign
 
     ev_a02 = ev/a0_sq
-    term = ev_a02*torch.pow(rij[HH]**2+(rho0a[HH]+rho0b[HH])**2,-1.5)
+    term_ss = ev_a02*torch.pow(rij[HH]**2+(rho0a[HH]+rho0b[HH])**2,-1.5)
     # TODO: Combine the 3 statements into 1
-    w_x[HH,0,0,0] = term*Xij[HH,0]
-    w_x[HH,1,0,0] = term*Xij[HH,1]
-    w_x[HH,2,0,0] = term*Xij[HH,2]
+    w_x[HH,0,0,0] = term_ss*Xij[HH,0]
+    w_x[HH,1,0,0] = term_ss*Xij[HH,1]
+    w_x[HH,2,0,0] = term_ss*Xij[HH,2]
+    # d/dx(ss|ss) is correct
 
     # TODO: Derivatives of the rotation matrix
 
@@ -141,6 +164,9 @@ def scf_grad(P, const, mask, maskd, molsize, idxi,idxj, ni,nj,xij, Xij,rij, gam,
     grad.index_add_(0,idxi,core_ab_x)
     grad.index_add_(0,idxj,core_ab_x,alpha=-1.0)
 
+    # grad_nuc.index_add_(0,idxi,core_ab_x)
+    # grad_nuc.index_add_(0,idxj,core_ab_x,alpha=-1.0)
+
     # print(grad)
 
     # ZAZB*g*d/dx(sasa|sbsb)
@@ -150,6 +176,8 @@ def scf_grad(P, const, mask, maskd, molsize, idxi,idxj, ni,nj,xij, Xij,rij, gam,
 
     grad.index_add_(0,idxi,overlapx)
     grad.index_add_(0,idxj,overlapx,alpha=-1.0)
+    # grad_nuc.index_add_(0,idxi,overlapx)
+    # grad_nuc.index_add_(0,idxj,overlapx,alpha=-1.0)
 
     # off diagonal block part, check KAB in forck2.f
     # mu, nu in A
@@ -252,6 +280,8 @@ def scf_grad(P, const, mask, maskd, molsize, idxi,idxj, ni,nj,xij, Xij,rij, gam,
 
     # grad = grad.reshape(nmol,molsize,3)
     print(f'Analytical gradient is:\n{grad.view(nmol,molsize,3)}')
+    # print(f'Analytical gradient of Enuc is:\n{grad_nuc.view(nmol,molsize,3)}')
 
     if torch.any(isX):
         raise Exception("Analytical gradients not yet implemented for molecules with non-Hydrogen atoms")
+
