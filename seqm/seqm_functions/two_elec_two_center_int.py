@@ -245,10 +245,10 @@ def rotate(ni,nj,xij,rij,tore,da,db, qa,qb, rho0a,rho0b, rho1a,rho1b, rho2a,rho2
     #modify the code
 
     #z2 = torch.sqrt(1.0-x[...,3-1]**2)
-    cond_x2 = torch.abs(x[...,3-1])<1.0
+    cond_x2 = torch.abs(x[...,3-1])<1.0 # make sure z^2<1.0, which is always true
     z2 = torch.zeros_like(x[...,2])
     z2[cond_x2] = torch.sqrt(1.0-x[cond_x2,3-1]**2)
-    cond1XX = z2>1.0e-5
+    cond1XX = z2>1.0e-5 # make sure sqrt(1-z^2)>threshold of 1e-5
     a = 1.0/z2[cond1XX]
     z0 = torch.ones_like(z2)
     z0[cond1XX] = -a*x[cond1XX,1-1]*x[cond1XX,3-1]
@@ -889,3 +889,4 @@ def rotate(ni,nj,xij,rij,tore,da,db, qa,qb, rho0a,rho0b, rho1a,rho1b, rho2a,rho2
     wc[XX] = w.reshape((-1,10,10))
     #print('w: ', wc)
     return wc, e1b, e2a
+

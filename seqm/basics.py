@@ -119,7 +119,7 @@ class Parser(torch.nn.Module):
         ni = Z[idxi]
         nj = Z[idxj]
         xij = paircoord/pairdist.unsqueeze(1)
-        Xij = paircoord
+        # Xij = paircoord
         mask = real_atoms[idxi]*molsize+real_atoms[idxj]%molsize
         mask_l = real_atoms[idxj]*molsize+real_atoms[idxi]%molsize
         pair_molid = atom_molid[idxi] # doesn't matter atom_molid[idxj]
@@ -131,12 +131,12 @@ class Parser(torch.nn.Module):
             return nmol, molsize, \
                 nHeavy, nHydro, nocc, \
                 Z, maskd, atom_molid, \
-                mask, pair_molid, ni, nj, idxi, idxj, xij, rij, Xij
+                mask, pair_molid, ni, nj, idxi, idxj, xij, rij#, Xij
         else:
             return nmol, molsize, \
                 nHeavy, nHydro, nocc, \
                 Z, maskd, atom_molid, \
-                mask, mask_l, pair_molid, ni, nj, idxi, idxj, xij, rij, Xij
+                mask, mask_l, pair_molid, ni, nj, idxi, idxj, xij, rij#, Xij
 
 class Parser_For_Ovr(torch.nn.Module):
     """
@@ -390,7 +390,7 @@ class Energy(torch.nn.Module):
         nmol, molsize, \
         nHeavy, nHydro, nocc, \
         Z, maskd, atom_molid, \
-        mask, pair_molid, ni, nj, idxi, idxj, xij, rij, Xij = self.parser(molecule, *args, **kwargs)
+        mask, pair_molid, ni, nj, idxi, idxj, xij, rij = self.parser(molecule, *args, **kwargs)
                 
         if callable(learned_parameters):
             adict = learned_parameters(molecule.species, molecule.coordinates)
@@ -480,7 +480,7 @@ class Energy(torch.nn.Module):
                       ni=ni,
                       nj=nj,
                       xij=xij,
-                      Xij = Xij,
+                      # Xij = Xij,
                       rij=rij,
                       Z=Z,
                       gam=gam,
@@ -491,9 +491,9 @@ class Energy(torch.nn.Module):
                       # upp=parameters['U_pp'],
                       gss=parameters['g_ss'],
                       # gsp=parameters['g_sp'],
-                      # gpp=parameters['g_pp'],
-                      # gp2=parameters['g_p2'],
-                      # hsp=parameters['h_sp'],
+                      gpp=parameters['g_pp'],
+                      gp2=parameters['g_p2'],
+                      hsp=parameters['h_sp'],
                       beta=beta,
                       # Kbeta=Kbeta,
                       # sp2=self.sp2,
