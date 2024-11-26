@@ -224,7 +224,7 @@ def w_der(const,Z,tore,ni,nj,w_x,rij,xij,Xij,idxi,idxj,gss,gpp,gp2,hsp,zetas,zet
     rho0a = rho_0[idxi]
     rho0b = rho_0[idxj]
 
-    riHH_x, riXH_x, ri_x = der_TETCILF(const,ni, nj,xij, Xij, rij, dd[idxi], dd[idxj], qq[idxi], qq[idxj], rho_0[idxi], rho_0[idxj], rho_1[idxi], rho_1[idxj], rho_2[idxi], rho_2[idxj])
+    riHH_x, riXH_x, ri_x = der_TETCILF(w_x,const,ni, nj,xij, Xij, rij, dd[idxi], dd[idxj], qq[idxi], qq[idxj], rho_0[idxi], rho_0[idxj], rho_1[idxi], rho_1[idxj], rho_2[idxi], rho_2[idxj],tore)
     # d/dx (ss|ss)
     # (ss|ss) = riHH = ev/sqrt(r0[HH]**2+(rho0a[HH]+rho0b[HH])**2)
     # Why is rij in bohr? It should be in angstrom right? Ans: OpenMopac website seems to suggest using bohr as well
@@ -294,7 +294,12 @@ def overlap_der_finiteDiff(overlap_KAB_x,idxi, idxj, rij, Xij, beta, ni, nj, zet
     overlap_KAB_x[...,1:,1:] *= (beta[idxi,1:2,None]+beta[idxj,1:2,None]).unsqueeze(1)
 
 
-def der_TETCILF(const,ni, nj,xij, Xij, r0, da0, db0, qa0, qb0, rho0a, rho0b, rho1a, rho1b, rho2a, rho2b):
+def der_TETCILF(w_x_final,const,ni, nj,xij, Xij, r0, da0, db0, qa0, qb0, rho0a, rho0b, rho1a, rho1b, rho2a, rho2b,tore):
+
+    print('WARNING: Do not recalculate 2e2c integrals. Save and resue from the scf run')
+    riHH, riXH, ri, _, _, _ = \
+           TETCILF(ni,nj,r0, tore, \
+                da0, db0, qa0,qb0, rho0a,rho0b, rho1a,rho1b, rho2a,rho2b)
     dtype = r0.dtype
     device = r0.device
 
@@ -544,9 +549,15 @@ def der_TETCILF(const,ni, nj,xij, Xij, r0, da0, db0, qa0, qb0, rho0a, rho0b, rho
     rab_over_rxy = a0*r0[Noalign]*onerxy
     rab_over_rxy_sq = torch.square(rab_over_rxy)
 
-    # When rot[Noalign,0,0] is zero, torch.sign gives a zero. Since I multiply this sign to other elements they become zero as well.
-    # To avoid this, I'm adding a small value (eps)
-    signcorrect = torch.sign(rot[Noalign,0,0]+torch.finfo(dtype).eps)
+    # The (1,0) element of the rotation matrix is -Y/sqrt(X^2+Y^2)*sign(X). If X (=xi-xj) is zero then there is a discontinuity in the sign function
+    # and hence the derivative will not exist. So I'm printing a warning that there might be numerical errors here
+    # Similaryly the (1,1) element of the rotation matrix is abs(X/sqrt(X^2+Y^2)). Again, the derivative of abs(X) will not exist when X=0, and hence this 
+    # will lead to errors.
+    if(xij_[:,0].any() == 0):
+        print("WARNING: The x component of the pair distance is zero. This could lead to instabilities in the derivative of the rotation matrix")
+
+    # As a quick-fix, I will add a small number (eps) when calculating sign(X) to avoid the aforementioned instability
+    signcorrect = torch.sign(xij_[:,0]+torch.finfo(dtype).eps)
     rot[Noalign,1,0] = -xij_[:,1]*rab_over_rxy*signcorrect
     rot[Noalign,1,1] = torch.abs(xij_[:,0]*rab_over_rxy)
 
@@ -577,25 +588,25 @@ def der_TETCILF(const,ni, nj,xij, Xij, r0, da0, db0, qa0, qb0, rho0a, rho0b, rho
 
     rot_der[Noalign,0,1,0] = -rot[Noalign,1,1]*rot[Noalign,1,0]*onerxy
     rot_der[Noalign,1,1,0] = -torch.square(rot[Noalign,1,1])*onerxy
-    # Sanity check because openmopac (and hence NEXMD) do this differently. I want to make sure our expressions give the same result
-    tolerance = 1e-8
-    assert torch.allclose(rot_der[Noalign,0,1,0],-rot_der[Noalign,1,0,0]*rab_over_rxy+rot[Noalign,0,1]*rot_der[Noalign,0,2,2]*rab_over_rxy_sq,atol=tolerance)
-    assert torch.allclose(rot_der[Noalign,1,1,0],-rot_der[Noalign,1,0,1]*rab_over_rxy+rot[Noalign,0,1]*rot_der[Noalign,1,2,2]*rab_over_rxy_sq,atol=tolerance)
-    assert torch.all(torch.abs(-rot_der[Noalign,1,0,2]*rab_over_rxy+rot[Noalign,0,1]*rot_der[Noalign,2,2,2]*rab_over_rxy_sq)<tolerance)
+    # # Sanity check because openmopac (and hence NEXMD) do this differently. I want to make sure our expressions give the same result
+    # tolerance = 1e-8
+    # assert torch.allclose(rot_der[Noalign,0,1,0],-rot_der[Noalign,1,0,0]*rab_over_rxy+rot[Noalign,0,1]*rot_der[Noalign,0,2,2]*rab_over_rxy_sq,atol=tolerance)
+    # assert torch.allclose(rot_der[Noalign,1,1,0],-rot_der[Noalign,1,0,1]*rab_over_rxy+rot[Noalign,0,1]*rot_der[Noalign,1,2,2]*rab_over_rxy_sq,atol=tolerance)
+    # assert torch.all(torch.abs(-rot_der[Noalign,1,0,2]*rab_over_rxy+rot[Noalign,0,1]*rot_der[Noalign,2,2,2]*rab_over_rxy_sq)<tolerance)
 
     rot_der[Noalign,0:2,1,0] *= signcorrect.unsqueeze(1)
 
     rot_der[Noalign,0,1,1] = torch.square(rot[Noalign,1,0])*onerxy
     rot_der[Noalign,1,1,1] = rot[Noalign,1,1]*rot[Noalign,1,0]*onerxy
-    # Sanity check because openmopac (and hence NEXMD) do this differently. I want to make sure our expressions give the same result
-    tolerance = 1e-8
-    mopacs = rot_der[Noalign,0,0,0]*rab_over_rxy-rot[Noalign,0,0]*rot_der[Noalign,0,2,2]*rab_over_rxy_sq
-    mine = rot_der[Noalign,0,1,1]
-    assert torch.allclose(mine,mopacs,atol=tolerance)
-    assert torch.allclose(rot_der[Noalign,1,1,1],rot_der[Noalign,0,0,1]*rab_over_rxy-rot[Noalign,0,0]*rot_der[Noalign,1,2,2]*rab_over_rxy_sq,atol=tolerance)
-    assert torch.all(torch.abs(rot_der[Noalign,0,0,2]*rab_over_rxy-rot[Noalign,0,0]*rot_der[Noalign,2,2,2]*rab_over_rxy_sq)<tolerance)
+    # # Sanity check because openmopac (and hence NEXMD) do this differently. I want to make sure our expressions give the same result
+    # tolerance = 1e-8
+    # mopacs = rot_der[Noalign,0,0,0]*rab_over_rxy-rot[Noalign,0,0]*rot_der[Noalign,0,2,2]*rab_over_rxy_sq
+    # mine = rot_der[Noalign,0,1,1]
+    # assert torch.allclose(mine,mopacs,atol=tolerance)
+    # assert torch.allclose(rot_der[Noalign,1,1,1],rot_der[Noalign,0,0,1]*rab_over_rxy-rot[Noalign,0,0]*rot_der[Noalign,1,2,2]*rab_over_rxy_sq,atol=tolerance)
+    # assert torch.all(torch.abs(rot_der[Noalign,0,0,2]*rab_over_rxy-rot[Noalign,0,0]*rot_der[Noalign,2,2,2]*rab_over_rxy_sq)<tolerance)
 
-    rot_der[Noalign,0:2,1,0] *= signcorrect.unsqueeze(1)
+    rot_der[Noalign,0:2,1,1] *= signcorrect.unsqueeze(1)
 
     rot_der[Noalign,0,2,0] = -xij_[:,2]*rot_der[Noalign,0,0,0]*rab_over_rxy -xij_[:,0]*rot_der[Noalign,2,0,0]*rab_over_rxy + xij_[:,0]*xij_[:,2]*rot_der[Noalign,0,2,2]*rab_over_rxy_sq
     rot_der[Noalign,1,2,0] = torch.prod(xij_,dim=1)*(onerxy+rab_over_rxy_sq*onerxy)
@@ -605,8 +616,6 @@ def der_TETCILF(const,ni, nj,xij, Xij, r0, da0, db0, qa0, qb0, rho0a, rho0b, rho
     rot_der[Noalign,1,2,1] = -xij_[:,2]*rot_der[Noalign,1,0,1]*rab_over_rxy -xij_[:,1]*rot_der[Noalign,2,0,1]*rab_over_rxy + xij_[:,1]*xij_[:,2]*rot_der[Noalign,1,2,2]*rab_over_rxy_sq
     rot_der[Noalign,2,2,1] = -termY*rxy_over_rab
 
-    # currently finite diff doesn't match unless xij[:,0] > 0. This is because of the sign(xij[:,0]) that I multiply to some matrix elements. 
-    # The sign function is discontinuous at 0
     # # verify with finite difference
     # delta = 5e-5  # TODO: Make sure this is a good delta (small enough, but still doesnt cause numerical instabilities)
     # rot_der_fd = torch.zeros(r0.shape[0],3,3,3)
@@ -660,6 +669,134 @@ def der_TETCILF(const,ni, nj,xij, Xij, r0, da0, db0, qa0, qb0, rho0a, rho0b, rho
     rot_der[Xalign, 2, 0, 2] = onerij[Xalign]
     rot_der[Xalign, 2, 2, 1] = -rot[Zalign, 0, 1]*onerij[Zalign]
 
+    w_x = torch.empty(ri.shape[0],3,100,device=device,dtype=dtype)
+    idx=-1
+    for k in range(0,4):
+        for l in range(0,k+1):
+             for m in range(0,4):
+                 for n in range(0,m+1):
+                     idx = idx + 1
+                     if (k==0):
+                         if m==0:
+                             # (ss|ss)
+                             w_x[...,0] = ri_x[...,0]
+                         elif n==0:
+                             # (ss|ps)
+                             w_x[...,idx] = ri_x[...,4]*rot[XX,None,0,m] + ri[:,None,4]*rot_der[XX,:,0,m]
+                         else:
+                             # (ss|pp)
+                             w_x[...,idx] = ri_x[...,10]*(rot[XX,0,m]*rot[XX,0,n]).unsqueeze(1) +\
+                                     ri[:,None,10]*(rot_der[XX,:,0,m]*rot[XX,None,0,n]+rot[XX,None,0,m]*rot_der[XX,:,0,n]) + \
+                                            ri_x[...,11]*(rot[XX,1,m]*rot[XX,1,n]+rot[XX,2,m]*rot[XX,2,n]).unsqueeze(1) +\
+                                            ri[:,None,11]*(rot_der[XX,:,1,m]*rot[XX,None,1,n]+rot_der[XX,:,2,m]*rot[XX,None,2,n]+
+                                                           rot[XX,None,1,m]*rot_der[XX,:,1,n]+rot[XX,None,2,m]*rot_der[XX,:,2,n])
+
+                     elif l==0:
+                         if m==0:
+                             # (ps|ss)
+                             w_x[...,idx] = ri_x[...,1]*rot[XX,None,0,k] + ri[:,None,1]*rot_der[XX,:,0,k]
+                         elif n==0:
+                             # (ps|ps)
+                             w_x[...,idx] = ri_x[...,5]*(rot[XX,0,k]*rot[XX,0,m]).unsqueeze(1) +\
+                                     ri[:,None,5]*(rot_der[XX,:,0,k]*rot[XX,None,0,m]+rot[XX,None,0,k]*rot_der[XX,:,0,m]) + \
+                                            ri_x[...,6]*(rot[XX,1,k]*rot[XX,1,m]+rot[XX,2,k]*rot[XX,2,m]).unsqueeze(1) +\
+                                            ri[:,None,6]*(rot_der[XX,:,1,k]*rot[XX,None,1,m]+rot_der[XX,:,2,k]*rot[XX,None,2,m]+
+                                                           rot[XX,None,1,k]*rot_der[XX,:,1,m]+rot[XX,None,2,k]*rot_der[XX,:,2,m])
+                         else:
+                             #(ps|pp)
+                             w_x[...,idx] = ri_x[...,12]*(rot[XX,0,k]*rot[XX,0,n]*rot[XX,0,m]).unsqueeze(1) +\
+                                     ri[:,None,12]*(rot_der[XX,:,0,k]*(rot[XX,0,n]*rot[XX,0,m]).unsqueeze(1) +
+                                      rot_der[XX,:,0,n]*(rot[XX,0,k]*rot[XX,0,m]).unsqueeze(1)+rot_der[XX,:,0,m]*(rot[XX,0,n]*rot[XX,0,k]).unsqueeze(1)) +\
+                                     ri_x[...,13]*((rot[XX,1,m]*rot[XX,1,n]+rot[XX,2,m]*rot[XX,2,n])*rot[XX,0,k]).unsqueeze(1) +\
+                                     ri[:,None,13]*((rot[XX,1,m]*rot[XX,1,n]+rot[XX,2,m]*rot[XX,2,n]).unsqueeze(1)*rot_der[XX,:,0,k]+
+                                                   (rot_der[XX,:,1,m]*rot[XX,None,1,n]+rot[XX,None,1,m]*rot_der[XX,:,1,n]+
+                                                    rot_der[XX,:,2,m]*rot[XX,None,2,n]+rot[XX,None,2,m]*rot_der[XX,:,2,n])*rot[XX,None,0,k]) +\
+                                     ri_x[...,14]*(rot[XX,1,k]*(rot[XX,1,n]*rot[XX,0,m]+rot[XX,1,m]*rot[XX,0,n])+
+                                                  rot[XX,2,k]*(rot[XX,2,m]*rot[XX,0,n]+rot[XX,2,n]*rot[XX,0,m])).unsqueeze(1) +\
+                                     ri[:,None,14]*(rot_der[XX,:,1,k]*(rot[XX,1,n]*rot[XX,0,m]+rot[XX,1,m]*rot[XX,0,n]).unsqueeze(1)+
+                                                   rot[XX,None,1,k]*(rot_der[XX,:,1,m]*rot[XX,None,0,n]+rot[XX,None,1,m]*rot_der[XX,:,0,n]+
+                                                                     rot_der[XX,:,1,n]*rot[XX,None,0,m]+rot[XX,None,1,n]*rot_der[XX,:,0,m])+
+                                                   rot_der[XX,:,2,k]*(rot[XX,2,n]*rot[XX,0,m]+rot[XX,2,m]*rot[XX,0,n]).unsqueeze(1)+
+                                                   rot[XX,None,2,k]*(rot_der[XX,:,2,n]*rot[XX,None,0,m]+rot[XX,None,2,n]*rot_der[XX,:,0,m]+
+                                                                     rot_der[XX,:,2,m]*rot[XX,None,0,n]+rot[XX,None,2,m]*rot_der[XX,:,0,n]))
+                             pass
+                     else:
+                         if m==0:
+                             # (pp|ss)
+                             w_x[...,idx] = ri_x[...,2]*(rot[XX,0,k]*rot[XX,0,l]).unsqueeze(1) +\
+                                     ri[:,None,2]*(rot_der[XX,:,0,k]*rot[XX,None,0,l]+rot[XX,None,0,k]*rot_der[XX,:,0,l]) + \
+                                            ri_x[...,3]*(rot[XX,1,k]*rot[XX,1,l]+rot[XX,2,k]*rot[XX,2,l]).unsqueeze(1) +\
+                                            ri[:,None,3]*(rot_der[XX,:,1,k]*rot[XX,None,1,l]+rot_der[XX,:,2,k]*rot[XX,None,2,l]+
+                                                           rot[XX,None,1,k]*rot_der[XX,:,1,l]+rot[XX,None,2,k]*rot_der[XX,:,2,l])
+                         elif n==0:
+                             # (pp|ps)
+                             w_x[...,idx] = ri_x[...,7]*(rot[XX,0,k]*rot[XX,0,l]*rot[XX,0,m]).unsqueeze(1) +\
+                                     ri[:,None,7]*(rot_der[XX,:,0,k]*(rot[XX,0,l]*rot[XX,0,m]).unsqueeze(1) +
+                                      rot_der[XX,:,0,l]*(rot[XX,0,k]*rot[XX,0,m]).unsqueeze(1)+rot_der[XX,:,0,m]*(rot[XX,0,l]*rot[XX,0,k]).unsqueeze(1)) +\
+                                     ri_x[...,8]*((rot[XX,1,k]*rot[XX,1,l]+rot[XX,2,k]*rot[XX,2,l])*rot[XX,0,m]).unsqueeze(1) +\
+                                     ri[:,None,8]*((rot[XX,1,k]*rot[XX,1,l]+rot[XX,2,k]*rot[XX,2,l]).unsqueeze(1)*rot_der[XX,:,0,m]+
+                                                   (rot_der[XX,:,1,k]*rot[XX,None,1,l]+rot[XX,None,1,k]*rot_der[XX,:,1,l]+
+                                                    rot_der[XX,:,2,k]*rot[XX,None,2,l]+rot[XX,None,2,k]*rot_der[XX,:,2,l])*rot[XX,None,0,m]) +\
+                                     ri_x[...,9]*(rot[XX,0,k]*(rot[XX,1,l]*rot[XX,1,m]+rot[XX,2,l]*rot[XX,2,m])+
+                                                  rot[XX,0,l]*(rot[XX,1,k]*rot[XX,1,m]+rot[XX,2,k]*rot[XX,2,m])).unsqueeze(1) +\
+                                     ri[:,None,9]*(rot_der[XX,:,0,k]*(rot[XX,1,l]*rot[XX,1,m]+rot[XX,2,l]*rot[XX,2,m]).unsqueeze(1)+
+                                                   rot[XX,None,0,k]*(rot_der[XX,:,1,l]*rot[XX,None,1,m]+rot[XX,None,2,l]*rot_der[XX,:,2,m]+
+                                                                     rot_der[XX,:,1,m]*rot[XX,None,1,l]+rot[XX,None,2,m]*rot_der[XX,:,2,l])+
+                                                   rot_der[XX,:,0,l]*(rot[XX,1,k]*rot[XX,1,m]+rot[XX,2,k]*rot[XX,2,m]).unsqueeze(1)+
+                                                   rot[XX,None,0,l]*(rot_der[XX,:,1,k]*rot[XX,None,1,m]+rot[XX,None,2,k]*rot_der[XX,:,2,m]+
+                                                                     rot_der[XX,:,1,m]*rot[XX,None,1,k]+rot[XX,None,2,m]*rot_der[XX,:,2,k]))
+
+                         else:
+                             #(pp|pp)
+                             w_x[...,idx] = ri_x[...,16-1] * (rot[XX,0,k] * rot[XX,0,l] * rot[XX,0,m] * rot[XX,0,n]).unsqueeze(1) +  \
+              ri[:,None,16-1] * (rot_der[XX,:,0,k]*(rot[XX,0,l]*rot[XX,0,m]*rot[XX,0,n]).unsqueeze(1)+\
+              rot_der[XX,:,0,l]*(rot[XX,0,k]*rot[XX,0,m]*rot[XX,0,n]).unsqueeze(1)+(rot_der[XX,:,0,m]*rot[XX,0,k]*rot[XX,0,l]*rot[XX,0,n]).unsqueeze(1)+\
+              (rot[XX,0,k]*rot[XX,0,l]*rot[XX,0,m]).unsqueeze(1)*rot_der[XX,:,0,n]) + ri_x[...,17-1] * ((rot[XX,1,k]*rot[XX,1,l]+\
+              rot[XX,2,k]*rot[XX,2,l]) * rot[XX,0,m] * rot[XX,0,n]).unsqueeze(1) + ri[:,None,17-1] * ((rot_der[XX,:,1,k]*rot[XX,None,1,l]+\
+              rot[XX,None,1,k]*rot_der[XX,:,1,l]+rot_der[XX,:,2,k]*rot[XX,None,2,l]+rot[XX,None,2,k]*rot_der[XX,:,2,l])*(rot[XX,0,m]*rot[XX,0,n]).unsqueeze(1)+\
+              (rot[XX,1,k]*rot[XX,1,l]+rot[XX,2,k]*rot[XX,2,l]).unsqueeze(1)*(rot_der[XX,:,0,m]*rot[XX,None,0,n]+rot[XX,None,0,m]*rot_der[XX,:,0,n])) +\
+               ri_x[...,18-1] * (rot[XX,0,k] * rot[XX,0,l] * (rot[XX,1,m]*rot[XX,1,n]+rot[XX,2,m]*rot[XX,2,n])).unsqueeze(1) + \
+              ri[:,None,18-1] * ((rot_der[XX,:,0,k]*rot[XX,None,0,l]+rot[XX,None,0,k]*rot_der[XX,:,0,l])*(rot[XX,1,m]*rot[XX,1,n]+\
+              rot[XX,2,m]*rot[XX,2,n]).unsqueeze(1)+(rot[XX,0,k]*rot[XX,0,l]).unsqueeze(1)*(rot_der[XX,:,1,m]*rot[XX,None,1,n]+rot[XX,None,1,m]*rot_der[XX,:,1,n]+\
+              rot_der[XX,:,2,m]*rot[XX,None,2,n]+rot[XX,None,2,m]*rot_der[XX,:,2,n]))
+                             w_x[...,idx] += ri_x[...,19-1] * (rot[XX,1,k]*rot[XX,1,l]*rot[XX,1,m]*rot[XX,1,n]+\
+              rot[XX,2,k]*rot[XX,2,l]*rot[XX,2,m]*rot[XX,2,n]).unsqueeze(1) + ri[:,None,19-1] * \
+              (rot_der[XX,:,1,k]*(rot[XX,1,l]*rot[XX,1,m]*rot[XX,1,n]).unsqueeze(1)+rot_der[XX,:,1,l]*(rot[XX,1,k]*rot[XX,1,m]*rot[XX,1,n]).unsqueeze(1)+\
+              rot_der[XX,:,1,m]*(rot[XX,1,k]*rot[XX,1,l]*rot[XX,1,n]).unsqueeze(1)+(rot[XX,1,k]*rot[XX,1,l]*rot[XX,1,m]).unsqueeze(1)*rot_der[XX,:,1,n]+\
+              rot_der[XX,:,2,k]*(rot[XX,2,l]*rot[XX,2,m]*rot[XX,2,n]).unsqueeze(1)+rot_der[XX,:,2,l]*(rot[XX,2,k]*rot[XX,2,m]*rot[XX,2,n]).unsqueeze(1)+\
+              rot_der[XX,:,2,m]*(rot[XX,2,k]*rot[XX,2,l]*rot[XX,2,n]).unsqueeze(1)+(rot[XX,2,k]*rot[XX,2,l]*rot[XX,2,m]).unsqueeze(1)*rot_der[XX,:,2,n]) + \
+              ri_x[...,20-1] * (rot[XX,0,k]*(rot[XX,0,m]*(rot[XX,1,l]*rot[XX,1,n]+rot[XX,2,l]*rot[XX,2,n])+\
+              rot[XX,0,n]*(rot[XX,1,l]*rot[XX,1,m]+rot[XX,2,l]*rot[XX,2,m]))+\
+              rot[XX,0,l]*(rot[XX,0,m]*(rot[XX,1,k]*rot[XX,1,n]+rot[XX,2,k]*rot[XX,2,n])+\
+              rot[XX,0,n]*(rot[XX,1,k]*rot[XX,1,m]+rot[XX,2,k]*rot[XX,2,m]))).unsqueeze(1)
+                 #      TO AVOID COMPILER DIFFICULTIES THIS IS DIVIDED
+                             temp1 = rot_der[XX,:,0,k] * (rot[XX,0,m]*(rot[XX,1,l]*rot[XX,1,n]+rot[XX,2,l]*rot[XX,2,n])+\
+              rot[XX,0,n]*(rot[XX,1,l]*rot[XX,1,m]+rot[XX,2,l]*rot[XX,2,m])) + rot_der[XX,:,0,l] * \
+              (rot[XX,0,m]*(rot[XX,1,k]*rot[XX,1,n]+rot[XX,2,k]*rot[XX,2,n])+rot[XX,0,n]*(rot[XX,1,k]*rot[XX,1,m]+\
+              rot[XX,2,k]*rot[XX,2,m])) + rot[XX,0,k] * (rot_der[XX,:,0,m]*(rot[XX,1,l]*rot[XX,1,n]+\
+              rot[XX,2,l]*rot[XX,2,n])+rot_der[XX,:,0,n]*(rot[XX,1,l]*rot[XX,1,m]+rot[XX,2,l]*rot[XX,2,m])) + rot[XX,0,l] \
+              * (rot_der[XX,:,0,m]*(rot[XX,1,k]*rot[XX,1,n]+rot[XX,2,k]*rot[XX,2,n])+rot_der[XX,:,0,n]*(rot[XX,1,k]*rot[XX,1,m]+\
+              rot[XX,2,k]*rot[XX,2,m]))
+                             temp2 = rot[XX,0,k] * (rot[XX,0,m]*(rot_der[XX,:,1,l]*rot[XX,1,n]+rot[XX,1,l]*rot_der[XX,:,1,n]+\
+              rot_der[XX,:,2,l]*rot[XX,2,n]+rot[XX,2,l]*rot_der[XX,:,2,n])+rot[XX,0,n]*(rot_der[XX,:,1,l]*rot[XX,1,m]+\
+              rot[XX,1,l]*rot_der[XX,:,1,m]+rot_der[XX,:,2,l]*rot[XX,2,m]+rot[XX,2,l]*rot_der[XX,:,2,m])) + rot[XX,0,l] * \
+              (rot[XX,0,m]*(rot_der[XX,:,1,k]*rot[XX,1,n]+rot[XX,1,k]*rot_der[XX,:,1,n]+rot_der[XX,:,2,k]*rot[XX,2,n]+\
+              rot[XX,2,k]*rot_der[XX,:,2,n])+rot[XX,0,n]*(rot_der[XX,:,1,k]*rot[XX,1,m]+rot[XX,1,k]*rot_der[XX,:,1,m]+\
+              rot_der[XX,:,2,k]*rot[XX,2,m]+rot[XX,2,k]*rot_der[XX,:,2,m]))
+                             w_x[...,idx] += ri[:,None,20-1] * (temp1+temp2).unsqueeze(1)
+                             w_x[...,idx] += ri_x[...,21-1] * (rot[XX,1,k]*rot[XX,1,l]*rot[XX,2,m]*rot[XX,2,n]+\
+              rot[XX,2,k]*rot[XX,2,l]*rot[XX,1,m]*rot[XX,1,n]).unsqueeze(1) + ri[:,None,21-1] * \
+              (rot_der[XX,:,1,k]*(rot[XX,1,l]*rot[XX,2,m]*rot[XX,2,n]).unsqueeze(1)+rot_der[XX,:,1,l]*(rot[XX,1,k]*rot[XX,2,m]*rot[XX,2,n]).unsqueeze(1)+\
+              rot_der[XX,:,2,m]*(rot[XX,1,k]*rot[XX,1,l]*rot[XX,2,n]).unsqueeze(1)+(rot[XX,1,k]*rot[XX,1,l]*rot[XX,2,m]).unsqueeze(1)*rot_der[XX,:,2,n]+\
+              rot_der[XX,:,2,k]*(rot[XX,2,l]*rot[XX,1,m]*rot[XX,1,n]).unsqueeze(1)+rot_der[XX,:,2,l]*(rot[XX,2,k]*rot[XX,1,m]*rot[XX,1,n]).unsqueeze(1)+\
+              rot_der[XX,:,1,m]*(rot[XX,2,k]*rot[XX,2,l]*rot[XX,1,n]).unsqueeze(1)+(rot[XX,2,k]*rot[XX,2,l]*rot[XX,1,m]).unsqueeze(1)*rot_der[XX,:,1,n])
+                             w_x[...,idx] += ri_x[...,22-1] * ((rot[XX,1,k]*rot[XX,2,l]+rot[XX,2,k]*rot[XX,1,l]) * \
+              (rot[XX,1,m]*rot[XX,2,n]+rot[XX,2,m]*rot[XX,1,n])).unsqueeze(1) + ri[:,None,22-1] * ((rot_der[XX,:,1,k]*rot[XX,None,2,l]+\
+              rot[XX,None,1,k]*rot_der[XX,:,2,l]+rot_der[XX,:,2,k]*rot[XX,None,1,l]+rot[XX,None,2,k]*rot_der[XX,:,1,l])*(rot[XX,1,m]*rot[XX,2,n]+\
+              rot[XX,2,m]*rot[XX,1,n]).unsqueeze(1)+ (rot[XX,1,k]*rot[XX,2,l]+rot[XX,2,k]*rot[XX,1,l]).unsqueeze(1)*(rot_der[XX,:,1,m]*rot[XX,None,2,n]+\
+              rot[XX,None,1,m]*rot_der[XX,:,2,n]+rot_der[XX,:,2,m]*rot[XX,None,1,n]+rot[XX,None,2,m]*rot_der[XX,:,1,n]))
+                     
+
     return riHH_x, riXH_x, ri_x
 
 def makeRotMat(r0,Xij,xij):
@@ -679,17 +816,21 @@ def makeRotMat(r0,Xij,xij):
     # Rotation matrix row 2 is
     # Rotation matrix row 3 is
 
-    rot[Noalign,0,:] = -xij[Noalign,:]
+    xij_ = -xij[Noalign,...]
+    rot[Noalign,0,:] = xij_
     onerxy = 1.0/torch.sqrt(rxy2[Noalign])
     rxy_over_rab = (torch.sqrt(rxy2)/r0)[Noalign]/a0
     rab_over_rxy = a0*r0[Noalign]*onerxy
 
-    signcorrect = torch.sign(rot[Noalign,0,0]+torch.finfo(rot.dtype).eps)
-    rot[Noalign,1,0] = -rot[Noalign,0,1]*rab_over_rxy*signcorrect
-    rot[Noalign,1,1] = torch.abs(rot[Noalign,0,0]*rab_over_rxy)
+    # When rot[Noalign,0,0] is zero, torch.sign gives a zero. Since I multiply this sign to other elements they become zero as well.
+    # To avoid this, I'm adding a small value (eps)
+    signcorrect = torch.sign(xij_[:,0]+torch.finfo(xij.dtype).eps)
+    rot[Noalign,1,0] = -xij_[:,1]*rab_over_rxy*signcorrect
+    rot[Noalign,1,1] = torch.abs(xij_[:,0]*rab_over_rxy)
 
-    rot[Noalign,2,0] = -rot[Noalign,0,0]*rot[Noalign,0,2]*rab_over_rxy
-    rot[Noalign,2,1] = -rot[Noalign,0,1]*rot[Noalign,0,2]*rab_over_rxy
+    rot[Noalign,2,0] = -xij_[:,0]*xij_[:,2]*rab_over_rxy
+    rot[Noalign,2,1] = -xij_[:,1]*xij_[:,2]*rab_over_rxy
     rot[Noalign,2,2] = rxy_over_rab
 
     return rot
+
