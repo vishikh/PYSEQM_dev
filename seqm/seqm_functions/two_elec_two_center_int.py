@@ -42,14 +42,14 @@ def two_elec_two_center_int(const,idxi, idxj, ni, nj, xij, rij, Z, zetas, zetap,
         rho_1[isX] = rho1(hsp[isX],dd[isX])
         rho_2[isX] = rho2(hpp[isX],qq[isX])
 
-    w, e1b, e2a = \
+    w, e1b, e2a, riXH, ri = \
         rotate(ni, nj, xij, rij, tore, dd[idxi],dd[idxj], \
                qq[idxi],qq[idxj], \
                rho_0[idxi],rho_0[idxj], \
                rho_1[idxi],rho_1[idxj], \
                rho_2[idxi],rho_2[idxj])
 
-    return w, e1b, e2a
+    return w, e1b, e2a, riXH, ri
 
 
 #rotate: rotate the two electron two center integrals from local frame to molecule frame
@@ -888,5 +888,5 @@ def rotate(ni,nj,xij,rij,tore,da,db, qa,qb, rho0a,rho0b, rho1a,rho1b, rho2a,rho2
     wc[XH,:,0] = wXH
     wc[XX] = w.reshape((-1,10,10))
     #print('w: ', wc)
-    return wc, e1b, e2a
+    return wc, e1b, e2a, riXH, ri
 

@@ -80,7 +80,7 @@ class EnergyXL(torch.nn.Module):
         if molecule.const.do_timing:
             t0 = time.time()
 
-        M, w = hcore(molecule.const, nmol, molsize, maskd, mask, idxi, idxj, ni,nj,xij,rij, Z, \
+        M, w, _, _ = hcore(molecule.const, nmol, molsize, maskd, mask, idxi, idxj, ni,nj,xij,rij, Z, \
                      zetas=parameters['zeta_s'],
                      zetap=parameters['zeta_p'],
                      uss=parameters['U_ss'],

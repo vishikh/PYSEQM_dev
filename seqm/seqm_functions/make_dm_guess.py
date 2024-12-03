@@ -48,7 +48,7 @@ def make_dm_guess(molecule, seqm_parameters, mix_homo_lumo=False, mix_coeff=0.4,
     nmol = molecule.nHeavy.shape[0]
     tore = molecule.const.tore
     
-    M, w = hcore(molecule.const, nmol, molecule.molsize, molecule.maskd, molecule.mask, molecule.idxi, molecule.idxj, molecule.ni,molecule.nj,molecule.xij,molecule.rij, molecule.Z, \
+    M, w, _, _ = hcore(molecule.const, nmol, molecule.molsize, molecule.maskd, molecule.mask, molecule.idxi, molecule.idxj, molecule.ni,molecule.nj,molecule.xij,molecule.rij, molecule.Z, \
                      zetas,
                      zetap,
                      uss,

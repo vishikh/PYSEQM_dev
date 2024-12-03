@@ -320,7 +320,7 @@ class Hamiltonian(torch.nn.Module):
             Kbeta = parameters["Kbeta"]
         else:
             Kbeta = None
-        F, e, P, Hcore, w, charge, notconverged = scf_loop(const=const,
+        F, e, P, Hcore, w, charge, notconverged,  riXH, ri  = scf_loop(const=const,
                               molsize=molsize,
                               nHeavy=nHeavy,
                               nHydro=nHydro,
@@ -355,7 +355,7 @@ class Hamiltonian(torch.nn.Module):
                               scf_backward=self.scf_backward,
                               scf_backward_eps=self.scf_backward_eps)
         #
-        return F, e, P, Hcore, w, charge, notconverged
+        return F, e, P, Hcore, w, charge, notconverged, riXH, ri 
 
 class Energy(torch.nn.Module):
     def __init__(self, seqm_parameters):
@@ -397,7 +397,7 @@ class Energy(torch.nn.Module):
             parameters = self.packpar(Z, learned_params = adict)    
         else:
             parameters = self.packpar(Z, learned_params = learned_parameters)
-        F, e, P, Hcore, w, charge, notconverged =  self.hamiltonian(molecule.const, molsize, \
+        F, e, P, Hcore, w, charge, notconverged, riXH, ri  =  self.hamiltonian(molecule.const, molsize, \
                                                  nHeavy, nHydro, nocc, \
                                                  Z, maskd, \
                                                  mask, atom_molid, pair_molid, idxi, idxj, ni,nj,xij,rij, \
@@ -495,6 +495,8 @@ class Energy(torch.nn.Module):
                       gp2=parameters['g_p2'],
                       hsp=parameters['h_sp'],
                       beta=beta,
+                      ri=ri,
+                      riXH=riXH,
                       # Kbeta=Kbeta,
                       # sp2=self.sp2,
                      )

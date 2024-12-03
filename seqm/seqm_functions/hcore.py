@@ -66,7 +66,7 @@ def hcore(const,nmol,molsize, maskd, mask, idxi,idxj, ni,nj,xij,rij,
                                zeta[idxj][overlap_pairs],
                                qn_int)
 
-    w, e1b, e2a = TETCI(const, idxi, idxj, ni, nj, xij, rij, Z, zetas, zetap, gss, gpp, gp2, hsp)
+    w, e1b, e2a, riXH, ri = TETCI(const, idxi, idxj, ni, nj, xij, rij, Z, zetas, zetap, gss, gpp, gp2, hsp)
     #w shape (napirs, 10,10)
     #e1b, e2a shape (npairs, 10)
     #di shape (npairs,4,4), unit eV, core part for AO on different centers(atoms)
@@ -166,5 +166,5 @@ def hcore(const,nmol,molsize, maskd, mask, idxi,idxj, ni,nj,xij,rij,
     return Hcore, w
     #"""
     #"""
-    return M, w
+    return M, w, riXH, ri
     #"""

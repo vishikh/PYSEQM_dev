@@ -918,7 +918,7 @@ def scf_loop(const, molsize, \
     tore = const.tore
     if const.do_timing:
         t0 = time.time()
-    M, w = hcore(const, nmol, molsize, maskd, mask, idxi, idxj, ni,nj,xij,rij, Z, \
+    M, w, riXH, ri = hcore(const, nmol, molsize, maskd, mask, idxi, idxj, ni,nj,xij,rij, Z, \
                      zetas,zetap, uss, upp , gss, gpp, gp2, hsp, beta, Kbeta=Kbeta)
     
     if const.do_timing:
@@ -1067,6 +1067,6 @@ def scf_loop(const, molsize, \
 
 
 
-        return F, e, Pconv, Hcore, w, charge, notconverged
+        return F, e, Pconv, Hcore, w, charge, notconverged, riXH, ri 
     else:
-        return F, None, Pconv, Hcore, w, None, notconverged
+        return F, None, Pconv, Hcore, w, None, notconverged, riXH, ri 
