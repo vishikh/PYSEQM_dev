@@ -4,17 +4,9 @@ from .constants import a0, ev
 from .constants import sto6g_coeff, sto6g_exponent
 from .cal_par import *
 from .diat_overlap import diatom_overlap_matrix
-# from .two_elec_two_center_int_local_frame import two_elec_two_center_int_local_frame as TETCILF
-from .two_elec_two_center_int import two_elec_two_center_int as TETCI
-# from .energy import pair_nuclear_energy
 
-# TODO: none of these tensors will need gradients with backpropogation (unless I wnat to do second derivatives), so I
-# should find out what to specify in order to save memory on computations since the graph doesn't have to be stored
 def scf_grad(P, const, mask, maskd, molsize, idxi,idxj, ni,nj,xij,rij, gam, parnuc,
             Z, gss,gpp,gp2,hsp, beta, zetas,zetap,riXH,ri):
-    # Xij is the vector from j to i in Angstroms
-    # xij is the *unit* vector from j to i
-    Xij = xij*rij.unsqueeze(1)*a0
     """
     Calculate the gradient of the ground state SCF energy
     in the units of ev/Angstrom
@@ -25,44 +17,26 @@ def scf_grad(P, const, mask, maskd, molsize, idxi,idxj, ni,nj,xij,rij, gam, parn
     torch.set_printoptions(precision=6)
     torch.set_printoptions(linewidth=110)
 
+    # Xij (= Xj-Xi) is the vector from j to i in Angstroms
+    # xij (= xj-xi) is the *unit* vector from j to i
+    Xij = xij*rij.unsqueeze(1)*a0
     dtype = Xij.dtype
     device = Xij.device
     nmol = P.shape[0]
     npairs=Xij.shape[0]
-    qn_int = const.qn_int
+    qn_int = const.qn_int # Principal quantum number of the valence shell
 
     # Define the gradient tensor
     grad = torch.zeros(nmol*molsize, 3, dtype=dtype, device=device)
 
-    # Overlap grad
+    # I will use this tensor to store the gradient of the overlap matrix, and then that of the exchange integrals
     overlap_KAB_x = torch.zeros((npairs,3,4,4),dtype=dtype, device=device)
-    # overlap_der(overlap_KAB_x,zetas,zetap,qn_int,ni,nj,rij,beta,idxi,idxj,Xij)
 
-    # Finite diff overlap derivative gives more accurate resutls
+    # overlap_der(overlap_KAB_x,zetas,zetap,qn_int,ni,nj,rij,beta,idxi,idxj,Xij)
+    # We will use finite-differnce for the overlap derivative because analytical expression for derivatives of 
+    # the overlap of slater orbitals is v complicated
     zeta = torch.cat((zetas.unsqueeze(1), zetap.unsqueeze(1)),dim=1)
     overlap_der_finiteDiff(overlap_KAB_x, idxi, idxj, rij, Xij, beta, ni, nj, zeta, qn_int)
-
-    # # verify with finite difference
-    # delta = 5e-5  
-    # eab_x = torch.zeros(rij.shape[0],3)
-    # for coord in range(3):
-    #     # since Xij = Xj-Xi, when I want to do Xi+delta, I have to subtract delta from from Xij
-    #     Xij[:, coord] -= delta
-    #     rij_ = torch.norm(Xij, dim=1)/a0
-    #     xij_ = Xij/torch.norm(Xij,dim=1).unsqueeze(1)
-    #     w_plus, _, _ = TETCI(const, idxi, idxj, ni, nj, xij_, rij_, Z, zetas, zetap, gss, gpp, gp2, hsp)
-    #     gam_ = w_plus[:,0,0]
-    #     EnucAB_plus = pair_nuclear_energy(const, nmol, ni, nj, idxi, idxj, rij_, gam=gam_, method='MNDO', parameters=parnuc)
-    #     Xij[:, coord] += 2.0 * delta
-    #     rij_ = torch.norm(Xij, dim=1)/a0
-    #     xij_ = Xij/torch.norm(Xij,dim=1).unsqueeze(1)
-    #     w_plus, _, _ = TETCI(const, idxi, idxj, ni, nj, xij_, rij_, Z, zetas, zetap, gss, gpp, gp2, hsp)
-    #     gam_ = w_plus[:,0,0]
-    #     EnucAB_minus = pair_nuclear_energy(const, nmol, ni, nj, idxi, idxj, rij_, gam=gam_, method='MNDO', parameters=parnuc)
-    #     Xij[:, coord] -= delta
-    #
-    #     eab_x[:, coord] = (EnucAB_plus - EnucAB_minus) / (2.0 * delta)
-    # check_fd(pair_grad,eab_x,'core repulsion grad')
 
     # Core-core repulsion derivatives
     # First, derivative of g_AB
@@ -70,6 +44,7 @@ def scf_grad(P, const, mask, maskd, molsize, idxi,idxj, ni,nj,xij,rij, gam, parn
     alpha = parnuc[0] 
     ZAZB = tore[ni]*tore[nj]
     pair_grad = torch.zeros((npairs,3),dtype=dtype, device=device)
+    # This adds ZAZB*(sasa|sbsb)*dg/dx to pair_grad
     g = core_core_der(alpha,rij,Xij,ZAZB,ni,nj,idxi,idxj,gam,pair_grad)
 
     # Two-center repulsion integral derivatives
@@ -78,98 +53,25 @@ def scf_grad(P, const, mask, maskd, molsize, idxi,idxj, ni,nj,xij,rij, gam, parn
     e1b_x,e2a_x = w_der(const,Z,tore,ni,nj,w_x,rij,xij,Xij,idxi,idxj,gss,gpp,gp2,hsp,zetas,zetap,riXH,ri)
 
     # Assembly
-    # P is currently in the shape of (nmol,4*molsize, 4*molsize)
-    # I will reshape it to P0(nmol*molsize*molsize, 4, 4)
     P0 = P.reshape(nmol, molsize, 4, molsize, 4).transpose(2, 3).reshape(nmol*molsize*molsize,4,4)
 
     # ZAZB*g*d/dx(sasa|sbsb)
     pair_grad.add_((ZAZB*g).unsqueeze(1)*w_x[:,:,0,0])
 
+    # The following logic to form the coulomb and exchange integrals by contracting the two-electron integrals with the density matrix has been cribbed from fock.py
 
-    # # verify with finite difference
-    # delta = 5e-5  
-    # overlap_contrib = torch.zeros(molsize*nmol,3)
-    # e1ae2b_contrib = torch.zeros(molsize*nmol,3)
-    # j_contrib = torch.zeros(molsize*nmol,3)
-    # for atom in range(molsize):
-    #     for coord in range(3):
-    #         Xij_ = Xij.clone()
-    #         atomi = idxi==atom
-    #         atomj = idxj==atom
-    #         Xij_[atomi,coord] -= delta
-    #         Xij_[atomj,coord] += delta
-    #         rij_ = torch.norm(Xij_, dim=1)/a0
-    #         xij_ = Xij_/torch.norm(Xij_,dim=1).unsqueeze(1)
-    #         s_plus = overlap_maker(P,xij_,rij_,zeta,qn_int,ni,nj,beta,idxi,idxj,mask,nmol,molsize)
-    #         e1ae2b_plus, jk_plus = tetci_maker(const, idxi, idxj, ni, nj, xij_, rij_, Z, zetas, zetap, gss, gpp, gp2, hsp, P, maskd,nmol,molsize)
-    #
-    #         Xij_ = Xij.clone()
-    #         Xij_[atomi,coord] += delta
-    #         Xij_[atomj,coord] -= delta
-    #         rij_ = torch.norm(Xij_, dim=1)/a0
-    #         xij_ = Xij_/torch.norm(Xij_,dim=1).unsqueeze(1)
-    #         s_minus = overlap_maker(P,xij_,rij_,zeta,qn_int,ni,nj,beta,idxi,idxj,mask,nmol,molsize)
-    #         e1ae2b_minus, jk_minus = tetci_maker(const, idxi, idxj, ni, nj, xij_, rij_, Z, zetas, zetap, gss, gpp, gp2, hsp, P, maskd,nmol,molsize)
-    #         overlap_contrib[atom,coord] = (s_plus-s_minus)/(2.0*delta)
-    #         e1ae2b_contrib[atom,coord] = (e1ae2b_plus-e1ae2b_minus)/(2.0*delta)
-    #         j_contrib[atom,coord] = (jk_plus-jk_minus)/(2.0*delta)
-    #         # if atom==0 and coord==0:
-    #         #     print((e1ae2b_plus-e1ae2b_minus)/(2.0*delta))
-    #
-    # # print(f'From analytical overlap der:\n{overlap_KAB_x}')
-    # overlap_contrib_anal = torch.zeros_like(overlap_contrib)
-    # tmp_dummy = (P0[mask,None,:,:]*overlap_KAB_x).sum(dim=(2,3))
-    # overlap_contrib_anal.index_add_(0,idxi,tmp_dummy)
-    # overlap_contrib_anal.index_add_(0,idxj,tmp_dummy,alpha=-1.0)
-    # check_fd(overlap_contrib_anal,overlap_contrib,"Overlap contrib")
-
-
-    # Core-elecron interaction
-    e1b_x = e1b_x.triu()+e1b_x.triu(1).transpose(2,3)
-    e2a_x = e2a_x.triu()+e2a_x.triu(1).transpose(2,3)
-    pair_grad.add_((P0[maskd[idxj],None,:,:]*e2a_x).sum(dim=(2,3)) + (P0[maskd[idxi],None,:,:]*e1b_x).sum(dim=(2,3)))
-
-    # # print(f'e1b_x:\n{e1b_x}')
-    # # print(f'e2a_x:\n{e2a_x}')
-    # e1ae2b_contrib_anal = torch.zeros_like(overlap_contrib)
-    # tmp_dummy = (P0[maskd[idxj],None,:,:]*e2a_x).sum(dim=(2,3)) + (P0[maskd[idxi],None,:,:]*e1b_x).sum(dim=(2,3))
-    # e1ae2b_contrib_anal.index_add_(0,idxi,tmp_dummy)
-    # e1ae2b_contrib_anal.index_add_(0,idxj,tmp_dummy,alpha=-1.0)
-    # check_fd(e1ae2b_contrib_anal,e1ae2b_contrib,"E1b E2a contrib")
-
-    # # verify with finite difference
-    # delta = 5e-5  
-    # eab_x = torch.zeros(rij.shape[0],3)
-    # for coord in range(3):
-    #     # since Xij = Xj-Xi, when I want to do Xi+delta, I have to subtract delta from from Xij
-    #     Xij[:, coord] -= delta
-    #     rij_ = torch.norm(Xij, dim=1)/a0
-    #     xij_ = Xij/torch.norm(Xij,dim=1).unsqueeze(1)
-    #     w_plus, _, _ = TETCI(const, idxi, idxj, ni, nj, xij_, rij_, Z, zetas, zetap, gss, gpp, gp2, hsp)
-    #     gam_ = w_plus[:,0,0]
-    #     EnucAB_plus = pair_nuclear_energy(const, nmol, ni, nj, idxi, idxj, rij_, gam=gam_, method='MNDO', parameters=parnuc)
-    #     Xij[:, coord] += 2.0 * delta
-    #     rij_ = torch.norm(Xij, dim=1)/a0
-    #     xij_ = Xij/torch.norm(Xij,dim=1).unsqueeze(1)
-    #     w_plus, _, _ = TETCI(const, idxi, idxj, ni, nj, xij_, rij_, Z, zetas, zetap, gss, gpp, gp2, hsp)
-    #     gam_ = w_plus[:,0,0]
-    #     EnucAB_minus = pair_nuclear_energy(const, nmol, ni, nj, idxi, idxj, rij_, gam=gam_, method='MNDO', parameters=parnuc)
-    #     Xij[:, coord] -= delta
-    #
-    #     eab_x[:, coord] = (EnucAB_plus - EnucAB_minus) / (2.0 * delta)
-    # check_fd(pair_grad,eab_x,'core repulsion grad')
-
+    # Exchange integrals
     # mu, nu in A
     # lambda, sigma in B
     # F_mu_lambda = Hcore - 0.5* \sum_{nu \in A} \sum_{sigma in B} P_{nu, sigma} * (mu nu, lambda, sigma)
-    # sumKAB = torch.zeros(npairs,3,4,4,dtype=dtype, device=device)
     # (ss ), (px s), (px px), (py s), (py px), (py py), (pz s), (pz px), (pz py), (pz pz)
     #   0,     1         2       3       4         5       6      7         8        9
     ind = torch.tensor([[0,1,3,6],
                         [1,2,4,7],
                         [3,4,5,8],
                         [6,7,8,9]],dtype=torch.int64, device=device)
-    # Pp =P[mask], P_{mu \in A, lambda \in B}
+    # mask has the indices of the lower (or upper) triangle blocks of the density matrix. Hence, P[mask] gives 
+    # us access to P_mu_lambda where mu is on atom A, lambda is on atom B
     Pp = -0.5*P0[mask]
     for i in range(4):
         for j in range(4):
@@ -178,7 +80,7 @@ def scf_grad(P, const, mask, maskd, molsize, idxi,idxj, ni,nj,xij,rij, gam, parn
 
     pair_grad.add_((P0[mask,None,:,:]*overlap_KAB_x).sum(dim=(2,3)))
 
-    # Diagonal part: Multiply by 0.5 for energy
+    # Coulomb integrals
     #F_mu_nv = Hcore + \sum^B \sum_{lambda, sigma} P^B_{lambda, sigma} * (mu nu, lambda sigma)
     #as only upper triangle part is done, and put in order
     # (ss ), (px s), (px px), (py s), (py px), (py py), (pz s), (pz px), (pz py), (pz pz)
@@ -189,6 +91,7 @@ def scf_grad(P, const, mask, maskd, molsize, idxi,idxj, ni,nj,xij,rij, gam, parn
                            2.0, 1.0,
                            2.0, 2.0, 1.0,
                            2.0, 2.0, 2.0, 1.0],dtype=dtype, device=device).reshape((-1,10))
+    weight*= 0.5 # Multiply the weight by 0.5 because the contribution of coulomb integrals to engergy is calculated as 0.5*P_mu_nu*F_mu_nv
 
     indices = (0, 0, 1, 0, 1, 2, 0, 1, 2, 3), (0, 1, 1, 2, 2, 2, 3, 3, 3, 3)
     PA = (P0[maskd[idxi]][..., indices[0], indices[1]] * weight).unsqueeze(-1)  # Shape: (npairs, 10, 1)
@@ -205,26 +108,25 @@ def scf_grad(P, const, mask, maskd, molsize, idxi,idxj, ni,nj,xij,rij, gam, parn
     sumA = overlap_KAB_x
     sumA.zero_()
     sumA[..., indices[0], indices[1]] = suma
-    sumA.add_(sumA.triu(1).transpose(2,3))
-    pair_grad.add_(0.5*torch.sum(P0[maskd[idxj],None,:,:] * sumA, dim=(2, 3)))
-    # tmp_dummy = 0.5*torch.sum(P0[maskd[idxj]].unsqueeze(1) * sumA, dim=(2, 3))
+    e2a_x.add_(sumA)
+
     sumB = overlap_KAB_x
     sumB.zero_()
     sumB[..., indices[0], indices[1]] = sumb
-    sumB.add_(sumB.triu(1).transpose(2,3))
-    pair_grad.add_(0.5*torch.sum(P0[maskd[idxi],None,:,:] * sumB, dim=(2, 3)))
+    e1b_x.add_(sumB)
 
-    # j_contrib_anal = torch.zeros_like(overlap_contrib)
-    # tmp_dummy.add_(0.5*torch.sum(P0[maskd[idxi]].unsqueeze(1) * sumB, dim=(2, 3)))
-    # j_contrib_anal.index_add_(0,idxi,tmp_dummy)
-    # j_contrib_anal.index_add_(0,idxj,tmp_dummy,alpha=-1.0)
-    # check_fd(j_contrib_anal,j_contrib,"J contrib")
+    # Core-elecron interaction
+    e1b_x.add_(e1b_x.triu(1).transpose(2,3))
+    e2a_x.add_(e2a_x.triu(1).transpose(2,3))
+    pair_grad.add_((P0[maskd[idxj],None,:,:]*e2a_x).sum(dim=(2,3)) + (P0[maskd[idxi],None,:,:]*e1b_x).sum(dim=(2,3)))
+    # pair_grad.add_((P0[maskd[idxj],None,:,:]*e2a_x.triu(1)).sum(dim=(2,3)) + (P0[maskd[idxi],None,:,:]*e1b_x.triu(1)).sum(dim=(2,3)))
 
     grad.index_add_(0,idxi,pair_grad)
     grad.index_add_(0,idxj,pair_grad,alpha=-1.0)
 
-    # grad = grad.reshape(nmol,molsize,3)
     print(f'Analytical gradient is:\n{grad.view(nmol,molsize,3)}')
+    grad = grad.reshape(nmol,molsize,3)
+    return grad
 
 def overlap_der(overlap_KAB_x,zetas,zetap,qn_int,ni,nj,rij,beta,idxi,idxj,Xij):
     if torch.any(qn_int[ni]>1):
@@ -330,35 +232,6 @@ def w_der(const,Z,tore,ni,nj,w_x,rij,xij,Xij,idxi,idxj,gss,gpp,gp2,hsp,zetas,zet
 
     der_TETCILF(w_x,const,ni, nj,xij, Xij, rij, dd[idxi], dd[idxj], qq[idxi], qq[idxj], rho_0[idxi], rho_0[idxj], rho_1[idxi], rho_1[idxj], rho_2[idxi], rho_2[idxj],tore,riXH,ri)
 
-    # # verify with finite difference
-    # delta = 5e-5  
-    # w_x_fd = torch.zeros(rij.shape[0],3,10,10)
-    # for coord in range(3):
-    #     # since Xij = Xj-Xi, when I want to do Xi+delta, I have to subtract delta from from Xij
-    #     Xij[:, coord] -= delta
-    #     rij_ = torch.norm(Xij, dim=1)/a0
-    #     xij = Xij/torch.norm(Xij,dim=1).unsqueeze(1)
-    #     w_plus, _, _ = TETCI(const, idxi, idxj, ni, nj, xij, rij_, Z, zetas, zetap, gss, gpp, gp2, hsp)
-    #     Xij[:, coord] += 2.0 * delta
-    #     rij_ = torch.norm(Xij, dim=1)/a0
-    #     xij = Xij/torch.norm(Xij,dim=1).unsqueeze(1)
-    #     w_minus, _, _ = TETCI(const, idxi, idxj, ni, nj, xij, rij_, Z, zetas, zetap, gss, gpp, gp2, hsp)
-    #
-    #     Xij[:, coord] -= delta
-    #
-    #     w_x_fd[:, coord,...] = (w_plus - w_minus) / (2.0 * delta)
-    #
-    # if not torch.allclose(w_x, w_x_fd,atol=1e-9):
-    #     # Find the differences
-    #     diffs = torch.abs(w_x - w_x_fd)
-    #     differences = torch.where(diffs>1e-9)
-    #     # print("Differences are at indices:",differences)
-    #     print("Differences are :",diffs[differences])
-    #     # print("Values in tensor1 at these indices:", ri_x[differences])
-    #     # print("Values in tensor2 at these indices:", ri_x_fd[differences])
-    # else:
-    #     print("2e2c derivative tensors are the same.")
-
     # # Why is rij in bohr? It should be in angstrom right? Ans: OpenMopac website seems to suggest using bohr as well
     # # for the 2-e integrals.
 
@@ -388,46 +261,6 @@ def w_der(const,Z,tore,ni,nj,w_x,rij,xij,Xij,idxi,idxj,gss,gpp,gp2,hsp,zetas,zet
     e2a_x[XX,:,2,3] = -tore[ni[XX]].unsqueeze(1)*w_x[XX,:,0,8]
     e2a_x[XX,:,3,3] = -tore[ni[XX]].unsqueeze(1)*w_x[XX,:,0,9]
 
-    # # verify with finite difference
-    # delta = 5e-5  
-    # e1b_x_fd = torch.zeros(rij.shape[0],3,4,4)
-    # e2a_x_fd = torch.zeros(rij.shape[0],3,4,4)
-    # for coord in range(3):
-    #     # since Xij = Xj-Xi, when I want to do Xi+delta, I have to subtract delta from from Xij
-    #     Xij[:, coord] -= delta
-    #     rij_ = torch.norm(Xij, dim=1)/a0
-    #     xij = Xij/torch.norm(Xij,dim=1).unsqueeze(1)
-    #     _, e1b_plus, e2a_plus = TETCI(const, idxi, idxj, ni, nj, xij, rij_, Z, zetas, zetap, gss, gpp, gp2, hsp)
-    #     Xij[:, coord] += 2.0 * delta
-    #     rij_ = torch.norm(Xij, dim=1)/a0
-    #     xij = Xij/torch.norm(Xij,dim=1).unsqueeze(1)
-    #     _, e1b_minus, e2a_minus = TETCI(const, idxi, idxj, ni, nj, xij, rij_, Z, zetas, zetap, gss, gpp, gp2, hsp)
-    #
-    #     Xij[:, coord] -= delta
-    #
-    #     e1b_x_fd[:, coord,...] = (e1b_plus - e1b_minus) / (2.0 * delta)
-    #     e2a_x_fd[:, coord,...] = (e2a_plus - e2a_minus) / (2.0 * delta)
-    #
-    # check_fd(e1b_x,e1b_x_fd,"Core-attraction integral derivatives 1b")
-    # check_fd(e2a_x,e2a_x_fd,"Core-attraction integral derivatives 2a")
-
-    # if not torch.allclose(e1b_x, e1b_x_fd,atol=1e-9):
-    #     # Find the differences
-    #     diffs = torch.abs(e1b_x_fd - e1b_x)
-    #     differences = torch.where(diffs>1e-9)
-    #     # print("Differences are at indices:",differences)
-    #     print("Differences are :",diffs[differences])
-    #     # print("Values in tensor1 at these indices:", ri_x[differences])
-    #     # print("Values in tensor2 at these indices:", ri_x_fd[differences])
-    # elif not torch.allclose(e2a_x, e2a_x_fd,atol=1e-9):
-    #     # Find the differences
-    #     diffs = torch.abs(e2a_x_fd - e2a_x)
-    #     differences = torch.where(diffs>1e-9)
-    #     # print("Differences are at indices:",differences)
-    #     print("Differences are :",diffs[differences])
-    # else:
-    #     print("core integral derivative tensors are the same.")
-
     return e1b_x,e2a_x
 
 from .constants import overlap_cutoff
@@ -437,7 +270,6 @@ def overlap_der_finiteDiff(overlap_KAB_x,idxi, idxj, rij, Xij, beta, ni, nj, zet
     delta = 5e-5  # TODO: Make sure this is a good delta (small enough, but still doesnt cause numerical instabilities)
     di_plus = torch.zeros(Xij.shape[0], 4, 4, dtype=Xij.dtype, device=Xij.device)
     di_minus = torch.clone(di_plus)
-    # di_x = torch.zeros(Xij.shape[0], 3, 4, 4, dtype=Xij.dtype, device=Xij.device)
     for coord in range(3):
         # since Xij = Xj-Xi, when I want to do Xi+delta, I have to subtract delta from from Xij
         Xij[:, coord] -= delta
@@ -468,11 +300,6 @@ def overlap_der_finiteDiff(overlap_KAB_x,idxi, idxj, rij, Xij, beta, ni, nj, zet
             qn_int,
         )
         Xij[:, coord] -= delta
-        # print(f'di_plus is\n{di_plus}')
-        # print(f'di_minus is\n{di_minus}')
-
-        # print(di_plus)
-        # print(di_minus)
         overlap_KAB_x[:, coord, :, :] = (di_plus - di_minus) / (2.0 * delta)
 
     overlap_KAB_x[...,0,0] *= (beta[idxi,0]+beta[idxj,0]).unsqueeze(1)
@@ -483,10 +310,6 @@ def overlap_der_finiteDiff(overlap_KAB_x,idxi, idxj, rij, Xij, beta, ni, nj, zet
 
 def der_TETCILF(w_x_final,const,ni, nj,xij, Xij, r0, da0, db0, qa0, qb0, rho0a, rho0b, rho1a, rho1b, rho2a, rho2b,tore,riXH,ri):
 
-    # print('WARNING: Do not recalculate 2e2c integrals. Save and reuse from the scf run')
-    # riHH, riXH, ri, _, _, _ = \
-    #        TETCILF(ni,nj,r0, tore, \
-    #             da0, db0, qa0,qb0, rho0a,rho0b, rho1a,rho1b, rho2a,rho2b)
     dtype = r0.dtype
     device = r0.device
 
@@ -673,40 +496,6 @@ def der_TETCILF(w_x_final,const,ni, nj,xij, Xij, r0, da0, db0, qa0, qb0, rho0a, 
     # RI(22) = PP * (QXXQXX -QXXQYY)
     ri_x[...,22-1] = 0.03125* term * (qxxqxx - qxxqyy).unsqueeze(1)
 
-    # # verify with finite difference
-    # delta = 5e-5  
-    # tore = const.tore
-    # # ri_x_fd =  torch.zeros(XX.sum(),3,22,dtype=dtype, device=device)
-    # # ri_x_fd =  torch.zeros(XH.sum(),3,4,dtype=dtype, device=device)
-    # ri_x_fd =  torch.zeros(HH.sum(),3,dtype=dtype, device=device)
-    # # di_x = torch.zeros(Xij.shape[0], 3, 4, 4, dtype=Xij.dtype, device=Xij.device)
-    # for coord in range(3):
-    #     # since Xij = Xj-Xi, when I want to do Xi+delta, I have to subtract delta from from Xij
-    #     Xij[:, coord] -= delta
-    #     rij_ = torch.norm(Xij, dim=1)/a0
-    #     ri_plus, _, _, _, _, _ = \
-    #        TETCILF(ni,nj,rij_, tore, \
-    #             da0, db0, qa0,qb0, rho0a,rho0b, rho1a,rho1b, rho2a,rho2b)
-    #     Xij[:, coord] += 2.0 * delta
-    #     rij_ = torch.norm(Xij, dim=1)/a0
-    #
-    #     ri_minus, _, _, _, _, _ = \
-    #        TETCILF(ni,nj,rij_, tore, \
-    #             da0, db0, qa0,qb0, rho0a,rho0b, rho1a,rho1b, rho2a,rho2b)
-    #     Xij[:, coord] -= delta
-    #
-    #     # ri_x_fd[:, coord, :] = (ri_plus - ri_minus) / (2.0 * delta)
-    #     ri_x_fd[:, coord] = (ri_plus - ri_minus) / (2.0 * delta)
-    #
-    # if not torch.allclose(riHH_x, ri_x_fd):
-    #     # Find the differences
-    #     diffs = torch.abs(riHH_x-ri_x_fd)
-    #     print("Differences are :",diffs)
-    #     # print("Values in tensor1 at these indices:", ri_x[differences])
-    #     # print("Values in tensor2 at these indices:", ri_x_fd[differences])
-    # else:
-    #     print("Tensors are the same.")
-
     # We have the derivatives of the 2-center-2-elec integrals in the local frame
     # In the local frame for p-orbitals we have p-sigma (along the axis) ,p-pi,p-pi' (perpendicular to the axis)
     # But in the molecular frame we have px,py,pz which are rotations of p-sigma, p-pi, p-pi'
@@ -725,10 +514,6 @@ def der_TETCILF(w_x_final,const,ni, nj,xij, Xij, r0, da0, db0, qa0, qb0, rho0a, 
     Yalign = rxz2<axis_tolerance
     Zalign = rxy2<axis_tolerance
     Noalign = ~(Xalign | Yalign | Zalign)
-
-    # Rotation matrix row 1 is x,y,z
-    # Rotation matrix row 2 is
-    # Rotation matrix row 3 is
 
     xij_ = -xij[Noalign,...]
     rot[Noalign,0,:] = xij_
@@ -803,35 +588,6 @@ def der_TETCILF(w_x_final,const,ni, nj,xij, Xij, r0, da0, db0, qa0, qb0, rho0a, 
     rot_der[Noalign,0,2,1] = rot_der[Noalign,1,2,0]
     rot_der[Noalign,1,2,1] = -xij_[:,2]*rot_der[Noalign,1,0,1]*rab_over_rxy -xij_[:,1]*rot_der[Noalign,2,0,1]*rab_over_rxy + xij_[:,1]*xij_[:,2]*rot_der[Noalign,1,2,2]*rab_over_rxy_sq
     rot_der[Noalign,2,2,1] = -termY*rxy_over_rab
-
-    # # verify with finite difference
-    # delta = 5e-5  
-    # rot_der_fd = torch.zeros(r0.shape[0],3,3,3)
-    # for coord in range(3):
-    #     # since Xij = Xj-Xi, when I want to do Xi+delta, I have to subtract delta from from Xij
-    #     Xij[:, coord] -= delta
-    #     rij_ = torch.norm(Xij, dim=1)/a0
-    #     xij = Xij/torch.norm(Xij,dim=1).unsqueeze(1)
-    #     rot_plus = makeRotMat(rij_,Xij,xij)
-    #     Xij[:, coord] += 2.0 * delta
-    #     rij_ = torch.norm(Xij, dim=1)/a0
-    #     xij = Xij/torch.norm(Xij,dim=1).unsqueeze(1)
-    #     rot_minus = makeRotMat(rij_,Xij,xij)
-    #
-    #     Xij[:, coord] -= delta
-    #
-    #     rot_der_fd[:, coord,...] = (rot_plus - rot_minus) / (2.0 * delta)
-    #
-    # if not torch.allclose(rot_der, rot_der_fd,atol=1e-9):
-    #     # Find the differences
-    #     diffs = torch.abs(rot_der-rot_der_fd)
-    #     differences = torch.where(diffs>1e-9)
-    #     print("Differences are at indices:",differences)
-    #     print("Differences are :",diffs[differences])
-    #     # print("Values in tensor1 at these indices:", ri_x[differences])
-    #     # print("Values in tensor2 at these indices:", ri_x_fd[differences])
-    # else:
-    #     print("Tensors are the same.")
 
     rot[Zalign, 0, 2] = torch.sign(-xij[Zalign,2]) 
     rot[Zalign, 1, 1] = 1.0
@@ -1004,112 +760,3 @@ def der_TETCILF(w_x_final,const,ni, nj,xij, Xij, r0, da0, db0, qa0, qb0, rho0a, 
     w_x_final[HH,:,0,0] = riHH_x
     w_x_final[XH,:,:,0] = wXH_x
     w_x_final[XX,...] = w_x.reshape(ri.shape[0],3,10,10)
-
-def makeRotMat(r0,Xij,xij):
-    rot = torch.zeros(r0.shape[0],3,3)
-
-    rxy2 = torch.square(Xij[:, 0]) + torch.square(Xij[:, 1])
-    ryz2 = torch.square(Xij[:, 1]) + torch.square(Xij[:, 2])
-    rxz2 = torch.square(Xij[:, 0]) + torch.square(Xij[:, 2])
-    axis_tolerance = 1e-8
-
-    Xalign = ryz2<axis_tolerance
-    Yalign = rxz2<axis_tolerance
-    Zalign = rxy2<axis_tolerance
-    Noalign = ~(Xalign | Yalign | Zalign)
-
-    # Rotation matrix row 1 is x,y,z
-    # Rotation matrix row 2 is
-    # Rotation matrix row 3 is
-
-    xij_ = -xij[Noalign,...]
-    rot[Noalign,0,:] = xij_
-    onerxy = 1.0/torch.sqrt(rxy2[Noalign])
-    rxy_over_rab = (torch.sqrt(rxy2)/r0)[Noalign]/a0
-    rab_over_rxy = a0*r0[Noalign]*onerxy
-
-    # When rot[Noalign,0,0] is zero, torch.sign gives a zero. Since I multiply this sign to other elements they become zero as well.
-    # To avoid this, I'm adding a small value (eps)
-    signcorrect = torch.sign(xij_[:,0]+torch.finfo(xij.dtype).eps)
-    rot[Noalign,1,0] = -xij_[:,1]*rab_over_rxy*signcorrect
-    rot[Noalign,1,1] = torch.abs(xij_[:,0]*rab_over_rxy)
-
-    rot[Noalign,2,0] = -xij_[:,0]*xij_[:,2]*rab_over_rxy
-    rot[Noalign,2,1] = -xij_[:,1]*xij_[:,2]*rab_over_rxy
-    rot[Noalign,2,2] = rxy_over_rab
-
-    return rot
-
-def check_fd(anal,fd,description=''):
-    if not torch.allclose(anal, fd,atol=1e-9):
-        # Find the differences
-        diffs = torch.abs(fd - anal)
-        differences = torch.where(diffs>1e-9)
-        # print("Differences are at indices:",differences)
-        # print("Differences are :",diffs[differences])
-        print(f'{description} analytical:\n{anal}')
-        print(f'{description} fd:\n{fd}')
-        # print("Values in tensor1 at these indices:", ri_x[differences])
-        # print("Values in tensor2 at these indices:", ri_x_fd[differences])
-    else:
-        print(f"{description} tensors are the same.")
-
-def overlap_maker(P,xij,rij,zeta,qn_int,ni,nj,beta,idxi,idxj,mask,nmol,molsize):
-    di = torch.zeros((xij.shape[0], 4, 4),dtype=P.dtype, device=P.device)
-    overlap_pairs = rij<=overlap_cutoff
-    di[overlap_pairs] = diatom_overlap_matrix(ni[overlap_pairs], nj[overlap_pairs], xij[overlap_pairs], rij[overlap_pairs], zeta[idxi][overlap_pairs], zeta[idxj][overlap_pairs], qn_int)
-    # print(di)
-    M = torch.zeros(nmol*molsize*molsize,4,4,dtype=P.dtype,device=P.device)
-    M[mask,0,0]   = di[...,0,0]*(beta[idxi,0]+beta[idxj,0])/2.0
-    M[mask,0,1:]  = di[...,0,1:]*(beta[idxi,0:1]+beta[idxj,1:2])/2.0
-    M[mask,1:,0]  = di[...,1:,0]*(beta[idxi,1:2]+beta[idxj,0:1])/2.0
-    M[mask,1:,1:] = di[...,1:,1:]*(beta[idxi,1:2,None]+beta[idxj,1:2,None])/2.0
-    M = M.reshape(nmol,molsize,molsize,4,4) \
-             .transpose(2,3) \
-             .reshape(nmol, 4*molsize, 4*molsize)
-    h = M.triu()+M.triu(1).transpose(1,2)
-    return torch.sum(P*h,dim=(1,2))
-    # return h
-
-def tetci_maker(const, idxi, idxj, ni, nj, xij, rij, Z, zetas, zetap, gss, gpp, gp2, hsp, P, maskd,nmol,molsize):
-    w, e1b, e2a, _, _ = TETCI(const, idxi, idxj, ni, nj, xij, rij, Z, zetas, zetap, gss, gpp, gp2, hsp)
-    M = torch.zeros(nmol*molsize*molsize,4,4,dtype=P.dtype,device=P.device)
-    F = M.clone()
-    M.index_add_(0,maskd[idxi], e1b)
-    M.index_add_(0,maskd[idxj], e2a)
-    M = M.reshape(nmol,molsize,molsize,4,4) \
-             .transpose(2,3) \
-             .reshape(nmol, 4*molsize, 4*molsize)
-    h = M.triu()+M.triu(1).transpose(1,2)
-
-    P0 = P.reshape((nmol,molsize,4,molsize,4)) \
-          .transpose(2,3).reshape(nmol*molsize*molsize,4,4)
-
-    weight = torch.tensor([1.0,
-                           2.0, 1.0,
-                           2.0, 2.0, 1.0,
-                           2.0, 2.0, 2.0, 1.0],dtype=P.dtype, device=P.device).reshape((-1,10))
-
-    PA = (P0[maskd[idxi]][...,(0,0,1,0,1,2,0,1,2,3),(0,1,1,2,2,2,3,3,3,3)]*weight).reshape((-1,10,1))
-    PB = (P0[maskd[idxj]][...,(0,0,1,0,1,2,0,1,2,3),(0,1,1,2,2,2,3,3,3,3)]*weight).reshape((-1,1,10))
-    suma = torch.sum(PA*w,dim=1)
-    sumb = torch.sum(PB*w,dim=2)
-    sumA = torch.zeros(w.shape[0],4,4,dtype=P.dtype, device=P.device)
-    sumB = torch.zeros_like(sumA)
-    sumA[...,(0,0,1,0,1,2,0,1,2,3),(0,1,1,2,2,2,3,3,3,3)] = suma
-    sumB[...,(0,0,1,0,1,2,0,1,2,3),(0,1,1,2,2,2,3,3,3,3)] = sumb
-
-    #F^A_{mu, nu} = Hcore + \sum^A + \sum_{B} \sum_{l, s \in B} P_{l,s \in B} * (mu nu, l s)
-    #\sum_B
-    F.index_add_(0,maskd[idxi],sumB)
-    #\sum_A
-    F.index_add_(0,maskd[idxj],sumA)
-
-    F0 = F.reshape(nmol,molsize,molsize,4,4) \
-             .transpose(2,3) \
-             .reshape(nmol, 4*molsize, 4*molsize)
-    #
-    F0.add_(F0.triu(1).transpose(1,2))
-
-    return torch.sum(P*h,dim=(1,2)),0.5*torch.sum(P*F0,dim=(1,2))
-    # return h

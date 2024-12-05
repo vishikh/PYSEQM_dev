@@ -460,46 +460,49 @@ class Energy(torch.nn.Module):
         Eelec = elec_energy(P, F, Hcore)
         
         if self.analytical_grad:
-            beta = torch.cat((parameters['beta_s'].unsqueeze(1), parameters['beta_p'].unsqueeze(1)),dim=1)
-            # if "Kbeta" in parameters:
-            #     Kbeta = parameters["Kbeta"]
-            # else:
-            #     Kbeta = None
-            scf_grad( P=P, 
-                      const=molecule.const,
-                      molsize=molsize,
-                      # nHeavy=nHeavy,
-                      # nHydro=nHydro,
-                      # nOccMO=nocc,
-                      maskd=maskd,
-                      mask=mask,
-                      # atom_molid=atom_molid,
-                      # pair_molid=pair_molid,
-                      idxi=idxi,
-                      idxj=idxj,
-                      ni=ni,
-                      nj=nj,
-                      xij=xij,
-                      # Xij = Xij,
-                      rij=rij,
-                      Z=Z,
-                      gam=gam,
-                      parnuc = parnuc,
-                      zetas=parameters['zeta_s'],
-                      zetap=parameters['zeta_p'],
-                      # uss=parameters['U_ss'],
-                      # upp=parameters['U_pp'],
-                      gss=parameters['g_ss'],
-                      # gsp=parameters['g_sp'],
-                      gpp=parameters['g_pp'],
-                      gp2=parameters['g_p2'],
-                      hsp=parameters['h_sp'],
-                      beta=beta,
-                      ri=ri,
-                      riXH=riXH,
-                      # Kbeta=Kbeta,
-                      # sp2=self.sp2,
-                     )
+            # None of the tensors will need gradients with backpropogation (unless I wnat to do second derivatives), so 
+            # we can save on memory since the compuational graph doesn't have to be stored.
+            with torch.no_grad():
+                beta = torch.cat((parameters['beta_s'].unsqueeze(1), parameters['beta_p'].unsqueeze(1)),dim=1)
+                # if "Kbeta" in parameters:
+                #     Kbeta = parameters["Kbeta"]
+                # else:
+                #     Kbeta = None
+                molecule.ground_analytical_grad =  scf_grad( P=P, 
+                          const=molecule.const,
+                          molsize=molsize,
+                          # nHeavy=nHeavy,
+                          # nHydro=nHydro,
+                          # nOccMO=nocc,
+                          maskd=maskd,
+                          mask=mask,
+                          # atom_molid=atom_molid,
+                          # pair_molid=pair_molid,
+                          idxi=idxi,
+                          idxj=idxj,
+                          ni=ni,
+                          nj=nj,
+                          xij=xij,
+                          # Xij = Xij,
+                          rij=rij,
+                          Z=Z,
+                          gam=gam,
+                          parnuc = parnuc,
+                          zetas=parameters['zeta_s'],
+                          zetap=parameters['zeta_p'],
+                          # uss=parameters['U_ss'],
+                          # upp=parameters['U_pp'],
+                          gss=parameters['g_ss'],
+                          # gsp=parameters['g_sp'],
+                          gpp=parameters['g_pp'],
+                          gp2=parameters['g_p2'],
+                          hsp=parameters['h_sp'],
+                          beta=beta,
+                          ri=ri,
+                          riXH=riXH,
+                          # Kbeta=Kbeta,
+                          # sp2=self.sp2,
+                         )
 
         if all_terms:
             Etot, Enuc = total_energy(nmol, pair_molid,EnucAB, Eelec)

@@ -36,6 +36,7 @@ class Molecule(torch.nn.Module):
         self.mass = MASS[self.species].unsqueeze(2)
         
         self.force = None
+        self.ground_analytical_gradient = None
         self.velocities = None
         self.acc = None
         
