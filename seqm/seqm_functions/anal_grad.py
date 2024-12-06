@@ -164,10 +164,10 @@ def scf_grad(P, const, method, mask, maskd, molsize, idxi,idxj, ni,nj,xij,rij, p
     
     # verify with finite difference
     delta = 1e-5  
-    e1b_x = torch.zeros(rij.shape[0],3,4,4)
-    e2a_x = torch.zeros(rij.shape[0],3,4,4)
-    w_x = torch.zeros(rij.shape[0],3,10,10)
-    pair_grad = torch.zeros(rij.shape[0],3)
+    e1b_x = torch.zeros(rij.shape[0],3,4,4,device=device,dtype=dtype)
+    e2a_x = torch.zeros(rij.shape[0],3,4,4,device=device,dtype=dtype)
+    w_x = torch.zeros(rij.shape[0],3,10,10,device=device,dtype=dtype)
+    pair_grad = torch.zeros(rij.shape[0],3,device=device,dtype=dtype)
     for coord in range(3):
         # since Xij = Xj-Xi, when I want to do Xi+delta, I have to subtract delta from from Xij
         Xij[:, coord] -= delta
@@ -667,8 +667,8 @@ def der_TETCILF(w_x_final,const,ni, nj,xij, Xij, r0, da0, db0, qa0, qb0, rho0a, 
     # But in the molecular frame we have px,py,pz which are rotations of p-sigma, p-pi, p-pi'
     # The p orbitals rotate just like the coordinate frame, so the rotation matrix is easy to express
     # We now make the rotation matrix and its derivative for the p-orbitals
-    rot = torch.zeros(r0.shape[0],3,3)
-    rot_der = torch.zeros(r0.shape[0],3,3,3)
+    rot = torch.zeros(r0.shape[0],3,3,device=device,dtype=dtype)
+    rot_der = torch.zeros(r0.shape[0],3,3,3,device=device,dtype=dtype)
 
     rxy2 = torch.square(Xij[:, 0]) + torch.square(Xij[:, 1])
     ryz2 = torch.square(Xij[:, 1]) + torch.square(Xij[:, 2])

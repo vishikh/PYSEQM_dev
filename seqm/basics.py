@@ -592,7 +592,7 @@ class Force(torch.nn.Module):
             e_gap = e_gap.detach()
 
         if analytical_gradient[0]:
-            force = -molecule.ground_analytical_grad
+            force = -molecule.ground_analytical_gradient
             return force.detach(), D.detach(), Hf.detach(), Etot.detach(), Eelec.detach(), Enuc.detach(), Eiso.detach(), e, e_gap, charge, notconverged
         #L = Etot.sum()
         L = Hf.sum()

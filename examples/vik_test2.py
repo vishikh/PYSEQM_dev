@@ -1,4 +1,5 @@
 import torch
+from seqm.seqm_functions import anal_grad
 from seqm.seqm_functions.constants import Constants
 from seqm.Molecule import Molecule
 from seqm.ElectronicStructure import Electronic_Structure
@@ -70,10 +71,12 @@ esdriver = Electronic_Structure(seqm_parameters).to(device)
 
 ### Run esdriver on molecules:
 # esdriver(molecules)
-esdriver(molecules,analytical_gradient=[True,'numerical'])
+esdriver(molecules,analytical_gradient=[True,'analytical'])
 force = molecules.force
+analytic_grad = molecules.ground_analytical_gradient
 print(f'Force is\n{force}')
-print(f'Diff b/w analytical_grad and backprop is {torch.sum(torch.abs(force+molecules.ground_analytical_gradient))}')
+if analytic_grad is not None:
+    print(f'Diff b/w analytical_grad and backprop is {torch.sum(torch.abs(force+analytic_grad))}')
 
 print(' Total Energy (eV):\n', molecules.Etot)
 print('\n Electronic Energy (eV): ', molecules.Eelec)
