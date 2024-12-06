@@ -67,7 +67,7 @@ seqm_parameters = {
                    'pair_outer_cutoff' : 1.0e10, # consistent with the unit on coordinates
                    'eig' : True,
                    # 'analytical_grad':True
-                   'do_scf_grad':[True, 'analytical'],  # [Want to calc SCF gradients:True/False, Which type: 'analytical,numerical']
+                   # 'do_scf_grad':[True, 'analytical'],  # [Want to calc SCF gradients:True/False, Which type: 'analytical,numerical']
                    }
 
 molecules = Molecule(const, seqm_parameters, coordinates, species).to(device)

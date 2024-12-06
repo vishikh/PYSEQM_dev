@@ -378,7 +378,10 @@ class Energy(torch.nn.Module):
             self.uhf = False
 
         # vishikh hack: hook in the gradient code here
-        self.do_scf_grad = seqm_parameters['do_scf_grad']
+        if 'do_scf_grad' in seqm_parameters:
+            self.do_scf_grad = seqm_parameters['do_scf_grad']
+        else:
+            self.do_scf_grad = [False]
 
 
     def forward(self, molecule, learned_parameters=dict(), all_terms=False, P0=None, *args, **kwargs):
