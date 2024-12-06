@@ -60,7 +60,7 @@ seqm_parameters = {
                    'pair_outer_cutoff' : 1.0e10, # consistent with the unit on coordinates
                    'eig' : True,
                    # 'analytical_grad':True,
-                   'do_scf_grad':[True, 'analytical'],  # [Want to calc SCF gradients:True/False, Which type: 'analytical,numerical']
+                   # 'do_scf_grad':[True, 'analytical'],  # [Want to calc SCF gradients:True/False, Which type: 'analytical,numerical']
                    }
 
 molecules = Molecule(const, seqm_parameters, coordinates, species).to(device)
@@ -69,10 +69,11 @@ molecules = Molecule(const, seqm_parameters, coordinates, species).to(device)
 esdriver = Electronic_Structure(seqm_parameters).to(device)
 
 ### Run esdriver on molecules:
-esdriver(molecules)
+# esdriver(molecules)
+esdriver(molecules,analytical_gradient=[True,'numerical'])
 force = molecules.force
 print(f'Force is\n{force}')
-print(f'Diff b/w analytical_grad and backprop is {torch.sum(torch.abs(force+molecules.ground_analytical_grad))}')
+print(f'Diff b/w analytical_grad and backprop is {torch.sum(torch.abs(force+molecules.ground_analytical_gradient))}')
 
 print(' Total Energy (eV):\n', molecules.Etot)
 print('\n Electronic Energy (eV): ', molecules.Eelec)

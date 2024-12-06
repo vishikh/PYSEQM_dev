@@ -377,11 +377,11 @@ class Energy(torch.nn.Module):
         else:
             self.uhf = False
 
-        # vishikh hack: hook in the gradient code here
-        if 'do_scf_grad' in seqm_parameters:
-            self.do_scf_grad = seqm_parameters['do_scf_grad']
-        else:
-            self.do_scf_grad = [False]
+        # # vishikh hack: hook in the gradient code here
+        # if 'do_scf_grad' in seqm_parameters:
+        #     self.do_scf_grad = seqm_parameters['do_scf_grad']
+        # else:
+        #     self.do_scf_grad = [False]
 
 
     def forward(self, molecule, learned_parameters=dict(), all_terms=False, P0=None, *args, **kwargs):
@@ -460,7 +460,8 @@ class Energy(torch.nn.Module):
         EnucAB = pair_nuclear_energy(molecule.const, nmol, ni, nj, idxi, idxj, rij, gam=gam, method=self.method, parameters=parnuc)
         Eelec = elec_energy(P, F, Hcore)
         
-        if self.do_scf_grad[0]:
+        analytical_gradient = kwargs.get('analytical_gradient',[False])
+        if analytical_gradient[0]:
             # None of the tensors will need gradients with backpropogation (unless I wnat to do second derivatives), so 
             # we can save on memory since the compuational graph doesn't have to be stored.
             with torch.no_grad():
@@ -469,7 +470,7 @@ class Energy(torch.nn.Module):
                 #     Kbeta = parameters["Kbeta"]
                 # else:
                 #     Kbeta = None
-                if self.do_scf_grad[1].lower() == 'analytical':
+                if analytical_gradient[1].lower() == 'analytical':
                     molecule.ground_analytical_grad =  scf_analytic_grad( P=P, 
                               const=molecule.const,
                               method = self.method,
@@ -506,7 +507,7 @@ class Energy(torch.nn.Module):
                               # Kbeta=Kbeta,
                               # sp2=self.sp2,
                              )
-                elif self.do_scf_grad[1].lower()=='numerical':
+                elif analytical_gradient[1].lower()=='numerical':
 
                     molecule.ground_analytical_grad =  scf_grad( P=P, 
                               const=molecule.const,
@@ -580,13 +581,19 @@ class Force(torch.nn.Module):
 
     def forward(self, molecule, learned_parameters=dict(), P0=None, *args, **kwargs):
 
-        molecule.coordinates.requires_grad_(True)
+        analytical_gradient = kwargs.get('analytical_gradient',[False])
+        if not analytical_gradient[0]:
+            molecule.coordinates.requires_grad_(True)
         Hf, Etot, Eelec, Enuc, Eiso, EnucAB, e_gap, e, D, charge, notconverged = \
             self.energy(molecule, learned_parameters=learned_parameters, all_terms=True, P0=P0, *args, **kwargs)
-        
+
         if torch.is_tensor(e):
             e = e.detach()
             e_gap = e_gap.detach()
+
+        if analytical_gradient[0]:
+            force = -molecule.ground_analytical_grad
+            return force.detach(), D.detach(), Hf.detach(), Etot.detach(), Eelec.detach(), Enuc.detach(), Eiso.detach(), e, e_gap, charge, notconverged
         #L = Etot.sum()
         L = Hf.sum()
         if molecule.const.do_timing:
