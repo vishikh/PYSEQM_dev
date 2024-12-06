@@ -471,7 +471,7 @@ class Energy(torch.nn.Module):
                 # else:
                 #     Kbeta = None
                 if analytical_gradient[1].lower() == 'analytical':
-                    molecule.ground_analytical_grad =  scf_analytic_grad( P=P, 
+                    molecule.ground_analytical_gradient =  scf_analytic_grad( P=P, 
                               const=molecule.const,
                               method = self.method,
                               molsize=molsize,
@@ -509,7 +509,7 @@ class Energy(torch.nn.Module):
                              )
                 elif analytical_gradient[1].lower()=='numerical':
 
-                    molecule.ground_analytical_grad =  scf_grad( P=P, 
+                    molecule.ground_analytical_gradient =  scf_grad( P=P, 
                               const=molecule.const,
                               method = self.method,
                               molsize=molsize,
