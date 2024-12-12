@@ -78,6 +78,8 @@ esdriver = Electronic_Structure(seqm_parameters).to(device)
 ### Run esdriver on molecules:
 esdriver(molecules,analytical_gradient=[True,'analytical'])
 print(f'Force is\n{molecules.force}')
+esdriver(molecules)
+print(f'Force is\n{molecules.force}')
 
 print(' Total Energy (eV):\n', molecules.Etot)
 # print('\n Electronic Energy (eV): ', molecules.Eelec)

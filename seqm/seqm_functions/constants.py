@@ -20,7 +20,7 @@ class Constants(torch.nn.Module):
     Constants used in seqm
     """
 
-    def __init__(self, length_conversion_factor=(1.0/a0), energy_conversion_factor=1.0, do_timing=False):
+    def __init__(self, length_conversion_factor=(1.0/a0), energy_conversion_factor=1.0, do_timing=True):
         """
         Constructor
         length_conversion_factor : atomic unit is used for length inside seqm

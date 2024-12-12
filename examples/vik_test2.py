@@ -71,12 +71,17 @@ esdriver = Electronic_Structure(seqm_parameters).to(device)
 
 ### Run esdriver on molecules:
 # esdriver(molecules)
-esdriver(molecules,analytical_gradient=[True,'analytical'])
-force = molecules.force
+esdriver(molecules,analytical_gradient=[True,'numerical'])
 analytic_grad = molecules.ground_analytical_gradient
+esdriver(molecules)
+force = molecules.force
+print(f'Time to compute force: {molecules.const.timing["Force"]}')
 print(f'Force is\n{force}')
 if analytic_grad is not None:
-    print(f'Diff b/w analytical_grad and backprop is {torch.sum(torch.abs(force+analytic_grad))}')
+    diff = force+analytic_grad 
+    # print(f'Diff b/w analytical_grad and backprop is {torch.sum(torch.abs(force+analytic_grad))}')
+    print(f'Diff b/w analytical_grad and backprop is {torch.linalg.vector_norm(force+analytic_grad)}')
+    print(f'Max diff in elements is {torch.linalg.vector_norm(diff,ord=float("inf"))}')
 
 print(' Total Energy (eV):\n', molecules.Etot)
 print('\n Electronic Energy (eV): ', molecules.Eelec)
